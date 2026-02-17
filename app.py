@@ -40,8 +40,11 @@ FINGER_TIPS = {
 FINGER_ORDER = list(FINGER_TIPS.keys())
 
 # URDF joint order: joint1=MCP, joint2=Abd, joint3=PIP, joint4=DIP
-JOINT_ROLE_LABELS = ["MCP", "Abd", "PIP", "DIP"]
-DISPLAY_ORDER = ["DIP", "PIP", "Abd", "MCP"]
+# Thumb uses different anatomical names: CMC, Abd, MCP, IP
+JOINT_ROLE_LABELS = {"default": ["MCP", "Abd", "PIP", "DIP"],
+                     "Thumb":   ["CMC", "Abd", "MCP", "IP"]}
+DISPLAY_ORDER = {"default": ["DIP", "PIP", "Abd", "MCP"],
+                 "Thumb":   ["IP", "MCP", "Abd", "CMC"]}
 
 
 # ──────────────────────── Kinematics helpers ─────────────────
@@ -214,7 +217,8 @@ st.sidebar.markdown("##### 🎛️ Joint Controls")
 # ── Reset button ───
 if st.sidebar.button("↺  Reset All Joints", use_container_width=True):
     for fname in FINGER_ORDER:
-        for role in JOINT_ROLE_LABELS:
+        labels = JOINT_ROLE_LABELS.get(fname, JOINT_ROLE_LABELS["default"])
+        for role in labels:
             key = f"{fname}_{role}"
             if key in st.session_state:
                 st.session_state[key] = 0.0
@@ -226,16 +230,18 @@ for fname in FINGER_ORDER:
     chain = chains[fname]
 
     with st.sidebar.expander(f"● {fname}", expanded=True):
+        labels = JOINT_ROLE_LABELS.get(fname, JOINT_ROLE_LABELS["default"])
+        order = DISPLAY_ORDER.get(fname, DISPLAY_ORDER["default"])
         rev_joints = []
         ri = 0
         for j in chain:
             if j["type"] != "revolute":
                 continue
-            role = JOINT_ROLE_LABELS[ri] if ri < len(JOINT_ROLE_LABELS) else f"J{ri+1}"
+            role = labels[ri] if ri < len(labels) else f"J{ri+1}"
             rev_joints.append((role, j))
             ri += 1
 
-        for role_name in DISPLAY_ORDER:
+        for role_name in order:
             for role, j in rev_joints:
                 if role != role_name:
                     continue
@@ -349,11 +355,12 @@ with st.expander("📋 Joint Limits Reference"):
     rows = []
     for fname in FINGER_ORDER:
         chain = chains[fname]
+        labels = JOINT_ROLE_LABELS.get(fname, JOINT_ROLE_LABELS["default"])
         ri = 0
         for j in chain:
             if j["type"] != "revolute":
                 continue
-            role = JOINT_ROLE_LABELS[ri] if ri < len(JOINT_ROLE_LABELS) else f"J{ri+1}"
+            role = labels[ri] if ri < len(labels) else f"J{ri+1}"
             rows.append({
                 "Finger": fname,
                 "Joint": j["name"],

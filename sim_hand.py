@@ -90,17 +90,21 @@ for name, tip in finger_tips.items():
     chains[name] = chain
 
 # --- PRINT JOINT LIMITS TABLE ---
-joint_labels = ['MCP', 'Abd', 'PIP', 'DIP']
+joint_labels = {
+    'default': ['MCP', 'Abd', 'PIP', 'DIP'],
+    'Thumb':   ['CMC', 'Abd', 'MCP', 'IP'],
+}
 print("\n" + "=" * 85)
 print(f"  {'FINGER':<8} {'JOINT':<30} {'ROLE':<6} {'LOWER (rad)':<13} {'UPPER (rad)':<13} {'LOWER (deg)':<13} {'UPPER (deg)'}")
 print("-" * 85)
 for fname in finger_tips.keys():
     chain = chains[fname]
+    labels = joint_labels.get(fname, joint_labels['default'])
     rev_idx = 0
     for j in chain:
         if j['type'] != 'revolute':
             continue
-        role = joint_labels[rev_idx] if rev_idx < len(joint_labels) else f'J{rev_idx+1}'
+        role = labels[rev_idx] if rev_idx < len(labels) else f'J{rev_idx+1}'
         lo, hi = j['lower'], j['upper']
         print(f"  {fname:<8} {j['name']:<30} {role:<6} {lo:>+10.4f}   {hi:>+10.4f}   {np.degrees(lo):>+10.2f}°  {np.degrees(hi):>+10.2f}°")
         rev_idx += 1
@@ -314,9 +318,16 @@ fig.text(0.02, 0.335, 'Joint Controls', fontsize=12, fontweight='bold',
 sliders = []
 ax_sliders = []
 # URDF joint order: joint1=MCP, joint2=Abd, joint3=PIP, joint4=DIP
-joint_role_labels = ['MCP', 'Abd', 'PIP', 'DIP']
-# Display order (top to bottom in each card): DIP, PIP, Abd, MCP
-display_order = ['DIP', 'PIP', 'Abd', 'MCP']
+# Thumb uses different anatomical names: CMC, Abd, MCP, IP
+joint_role_labels = {
+    'default': ['MCP', 'Abd', 'PIP', 'DIP'],
+    'Thumb':   ['CMC', 'Abd', 'MCP', 'IP'],
+}
+# Display order (top to bottom in each card)
+display_order = {
+    'default': ['DIP', 'PIP', 'Abd', 'MCP'],
+    'Thumb':   ['IP', 'MCP', 'Abd', 'CMC'],
+}
 
 # --- Pyramid / staggered grid layout ---
 # Row 0:  [  Index   Middle   Ring  ]      (3 fingers, centered)
@@ -365,18 +376,20 @@ for grid_row_idx, grid_row in enumerate(grid_rows):
                  color=colors[fname], ha='center', va='top')
 
         # Collect revolute joints and assign correct role labels
+        labels = joint_role_labels.get(fname, joint_role_labels['default'])
+        order = display_order.get(fname, display_order['default'])
         rev_joints = []
         rev_idx = 0
         for j in chain:
             if j['type'] != 'revolute':
                 continue
-            role = joint_role_labels[rev_idx] if rev_idx < len(joint_role_labels) else f'J{rev_idx+1}'
+            role = labels[rev_idx] if rev_idx < len(labels) else f'J{rev_idx+1}'
             rev_joints.append((role, j))
             rev_idx += 1
 
-        # Sort joints into the requested display order: DIP, PIP, Abd, MCP
+        # Sort joints into the requested display order
         ordered_joints = []
-        for role_name in display_order:
+        for role_name in order:
             for role, j in rev_joints:
                 if role == role_name:
                     ordered_joints.append((role, j))

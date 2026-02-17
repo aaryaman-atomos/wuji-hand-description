@@ -35,8 +35,10 @@ FINGER_TIPS = {
     "Pinky":  "right_finger5_tip_link",
 }
 
-JOINT_ROLE_LABELS = ["MCP", "Abd", "PIP", "DIP"]
-DISPLAY_ORDER = ["DIP", "PIP", "Abd", "MCP"]
+JOINT_ROLE_LABELS = {"default": ["MCP", "Abd", "PIP", "DIP"],
+                     "Thumb":   ["CMC", "Abd", "MCP", "IP"]}
+DISPLAY_ORDER = {"default": ["DIP", "PIP", "Abd", "MCP"],
+                 "Thumb":   ["IP", "MCP", "Abd", "CMC"]}
 
 
 # ── Kinematics (same as sim_hand.py) ────────────────────────
@@ -93,6 +95,7 @@ for fname, tip in FINGER_TIPS.items():
 # ── Precompute static transforms (4×4 flattened) ───────────
 chains_json = {}
 for fname, chain in chains.items():
+    labels = JOINT_ROLE_LABELS.get(fname, JOINT_ROLE_LABELS["default"])
     jlist = []
     for j in chain:
         T = get_transform(j["xyz"], j["rpy"])
@@ -104,13 +107,12 @@ for fname, chain in chains.items():
             "lower": j["lower"],
             "upper": j["upper"],
         }
-        # Assign role label
         jlist.append(entry)
     # Tag revolute joints with role labels
     ri = 0
     for entry in jlist:
         if entry["type"] == "revolute":
-            entry["role"] = JOINT_ROLE_LABELS[ri] if ri < len(JOINT_ROLE_LABELS) else f"J{ri+1}"
+            entry["role"] = labels[ri] if ri < len(labels) else f"J{ri+1}"
             ri += 1
     chains_json[fname] = jlist
 
@@ -178,6 +180,8 @@ html = f"""<!DOCTYPE html>
   .sidebar {{ width: 320px; min-width: 280px; background: #fff; border-right: 1px solid #e0e0e0;
               overflow-y: auto; padding: 16px; flex-shrink: 0; }}
   .main {{ flex: 1; display: flex; flex-direction: column; }}
+  .plot-title {{ text-align: center; font-size: 18px; font-weight: 700; color: #333;
+                 padding: 12px 0 4px; background: #fff; flex-shrink: 0; }}
   #plot {{ flex: 1; min-height: 0; }}
   h1 {{ font-size: 18px; margin-bottom: 8px; }}
   h2 {{ font-size: 14px; margin: 16px 0 8px; color: #555; border-bottom: 1px solid #eee; padding-bottom: 4px; }}
@@ -217,6 +221,7 @@ html = f"""<!DOCTYPE html>
     </div>
   </div>
   <div class="main">
+    <div class="plot-title">Interactive Hand Simulator</div>
     <div id="plot"></div>
   </div>
 </div>
@@ -329,9 +334,9 @@ const layout = {{
     camera:{{eye:{{x:1.4,y:1.4,z:0.8}}}},
     bgcolor:'white',
   }},
-  margin:{{l:0,r:0,t:100,b:0}},
-  legend:{{orientation:'h',yanchor:'top',y:1.12,xanchor:'center',x:0.5,font:{{size:11,color:'#333'}}}},
-  title:{{text:'Interactive Hand Simulator',x:0.5,y:0.99,yanchor:'top',font:{{size:16,color:'#333'}}}},
+  margin:{{l:0,r:0,t:50,b:0}},
+  legend:{{orientation:'h',yanchor:'bottom',y:1.02,xanchor:'center',x:0.5,font:{{size:11,color:'#333'}}}},
+  showlegend:true,
 }};
 
 const initialTraces = buildTraces();
@@ -374,8 +379,9 @@ FINGER_ORDER.forEach(f => {{
   const revJoints = [];
   CHAINS[f].forEach(j => {{ if (j.type==='revolute') revJoints.push(j); }});
 
-  // Display in desired order
-  DISPLAY_ORDER.forEach(role => {{
+  // Display in desired order (per-finger)
+  const order = DISPLAY_ORDER[f] || DISPLAY_ORDER['default'];
+  order.forEach(role => {{
     const j = revJoints.find(jj => jj.role === role);
     if (!j) return;
 
