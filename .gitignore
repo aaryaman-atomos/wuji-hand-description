@@ -5,5 +5,6 @@ install/
 log/
 
 __pycache__/
+venv/
 
 *.tmp.urdf
