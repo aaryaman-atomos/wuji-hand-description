@@ -329,9 +329,9 @@ const layout = {{
     camera:{{eye:{{x:1.4,y:1.4,z:0.8}}}},
     bgcolor:'white',
   }},
-  margin:{{l:0,r:0,t:40,b:0}},
-  legend:{{orientation:'h',yanchor:'bottom',y:1.0,xanchor:'center',x:0.5,font:{{size:11,color:'#333'}}}},
-  title:{{text:'Interactive Hand Simulator',x:0.5,y:0.98,yanchor:'top',font:{{size:16,color:'#333'}}}},
+  margin:{{l:0,r:0,t:100,b:0}},
+  legend:{{orientation:'h',yanchor:'top',y:1.12,xanchor:'center',x:0.5,font:{{size:11,color:'#333'}}}},
+  title:{{text:'Interactive Hand Simulator',x:0.5,y:0.99,yanchor:'top',font:{{size:16,color:'#333'}}}},
 }};
 
 const initialTraces = buildTraces();
