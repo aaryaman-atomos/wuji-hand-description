@@ -220,17 +220,23 @@ def build_figure(chains, angles, hulls, show_hulls):
             camera=dict(eye=dict(x=1.4, y=1.4, z=0.8)),
             bgcolor="white",
         ),
-        margin=dict(l=0, r=0, t=30, b=0),
-        height=650,
+        margin=dict(l=0, r=0, t=80, b=0),
+        height=700,
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
+            y=1.0,
             xanchor="center",
             x=0.5,
             font=dict(size=11, color="#333333"),
         ),
-        title=dict(text="Interactive Hand Simulator", x=0.5, font=dict(color="#333333")),
+        title=dict(
+            text="Interactive Hand Simulator",
+            x=0.5,
+            y=0.98,
+            yanchor="top",
+            font=dict(size=16, color="#333333"),
+        ),
     )
     return fig
 
