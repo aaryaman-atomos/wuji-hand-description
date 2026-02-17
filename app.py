@@ -202,13 +202,23 @@ def build_figure(chains, angles, hulls, show_hulls):
         ))
 
     limit = 0.15
+    axis_style = dict(
+        backgroundcolor="white",
+        gridcolor="#e0e0e0",
+        showbackground=True,
+        zerolinecolor="#cccccc",
+    )
     fig.update_layout(
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
         scene=dict(
-            xaxis=dict(range=[-0.05, limit], title="X"),
-            yaxis=dict(range=[-limit / 2, limit / 2], title="Y"),
-            zaxis=dict(range=[-0.05, limit], title="Z"),
+            xaxis=dict(range=[-0.05, limit], title="X", **axis_style),
+            yaxis=dict(range=[-limit / 2, limit / 2], title="Y", **axis_style),
+            zaxis=dict(range=[-0.05, limit], title="Z", **axis_style),
             aspectmode="cube",
             camera=dict(eye=dict(x=1.4, y=1.4, z=0.8)),
+            bgcolor="white",
         ),
         margin=dict(l=0, r=0, t=30, b=0),
         height=650,
@@ -218,9 +228,9 @@ def build_figure(chains, angles, hulls, show_hulls):
             y=1.02,
             xanchor="center",
             x=0.5,
-            font=dict(size=11),
+            font=dict(size=11, color="#333333"),
         ),
-        title=dict(text="Interactive Hand Simulator", x=0.5),
+        title=dict(text="Interactive Hand Simulator", x=0.5, font=dict(color="#333333")),
     )
     return fig
 
