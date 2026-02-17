@@ -201,21 +201,41 @@ def build_figure(chains, angles, hulls, show_hulls):
             showlegend=False,
         ))
 
-    limit = 0.15
     axis_style = dict(
         backgroundcolor="white",
         gridcolor="#e0e0e0",
         showbackground=True,
         zerolinecolor="#cccccc",
     )
+    # Compute bounding box from all hull points so nothing gets clipped
+    all_pts = []
+    for fname, (tips, _) in hulls.items():
+        if show_hulls.get(fname, True):
+            all_pts.append(tips)
+    # Also include current skeleton positions
+    for fname, chain in chains.items():
+        pts = forward_kinematics(chain, angles)
+        all_pts.append(pts)
+
+    if all_pts:
+        combined = np.concatenate(all_pts, axis=0)
+        pad = 0.02  # 2 cm padding on every side
+        x_lo, x_hi = combined[:, 0].min() - pad, combined[:, 0].max() + pad
+        y_lo, y_hi = combined[:, 1].min() - pad, combined[:, 1].max() + pad
+        z_lo, z_hi = combined[:, 2].min() - pad, combined[:, 2].max() + pad
+    else:
+        x_lo, x_hi = -0.08, 0.20
+        y_lo, y_hi = -0.12, 0.12
+        z_lo, z_hi = -0.08, 0.20
+
     fig.update_layout(
         template="plotly_white",
         paper_bgcolor="white",
         plot_bgcolor="white",
         scene=dict(
-            xaxis=dict(range=[-0.05, limit], title="X", **axis_style),
-            yaxis=dict(range=[-limit / 2, limit / 2], title="Y", **axis_style),
-            zaxis=dict(range=[-0.05, limit], title="Z", **axis_style),
+            xaxis=dict(range=[x_lo, x_hi], title="X", **axis_style),
+            yaxis=dict(range=[y_lo, y_hi], title="Y", **axis_style),
+            zaxis=dict(range=[z_lo, z_hi], title="Z", **axis_style),
             aspectmode="cube",
             camera=dict(eye=dict(x=1.4, y=1.4, z=0.8)),
             bgcolor="white",
