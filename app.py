@@ -37,6 +37,8 @@ FINGER_TIPS = {
     "Pinky":  "right_finger5_tip_link",
 }
 
+FINGER_ORDER = list(FINGER_TIPS.keys())
+
 # URDF joint order: joint1=MCP, joint2=Abd, joint3=PIP, joint4=DIP
 JOINT_ROLE_LABELS = ["MCP", "Abd", "PIP", "DIP"]
 DISPLAY_ORDER = ["DIP", "PIP", "Abd", "MCP"]
@@ -129,12 +131,15 @@ def forward_kinematics(chain, angles_dict):
     return np.array(points)
 
 
-# ──────────────────────── Workspace hull (cached) ────────────
+# ──────────────────────── Workspace hull + bbox (cached) ─────
 @st.cache_data
-def compute_hulls(_chains):
-    """Compute convex-hull triangles for every finger's workspace."""
-    hulls = {}
-    for fname, chain in _chains.items():
+def compute_hulls_and_bbox(_chains):
+    """Compute convex-hull data and global bounding box. Returns (hull_traces, bbox)."""
+    hull_traces = []
+    all_hull_pts = []
+
+    for fname in FINGER_ORDER:
+        chain = _chains[fname]
         static_T = [get_transform(j["xyz"], j["rpy"]) for j in chain]
         rev_joints = [j for j in chain if j["type"] == "revolute"]
         ranges = [np.linspace(j["lower"], j["upper"], HULL_SAMPLES) for j in rev_joints]
@@ -154,23 +159,117 @@ def compute_hulls(_chains):
         if len(tips) >= 4:
             try:
                 hull = ConvexHull(tips)
-                hulls[fname] = (tips, hull.simplices)
+                hull_traces.append(dict(
+                    finger=fname,
+                    x=tips[:, 0].tolist(),
+                    y=tips[:, 1].tolist(),
+                    z=tips[:, 2].tolist(),
+                    i=hull.simplices[:, 0].tolist(),
+                    j=hull.simplices[:, 1].tolist(),
+                    k=hull.simplices[:, 2].tolist(),
+                ))
+                all_hull_pts.append(tips)
             except Exception:
                 pass
-    return hulls
+
+    # Bounding box from hull points
+    if all_hull_pts:
+        combined = np.concatenate(all_hull_pts, axis=0)
+        pad = 0.02
+        bbox = dict(
+            x_lo=float(combined[:, 0].min() - pad),
+            x_hi=float(combined[:, 0].max() + pad),
+            y_lo=float(combined[:, 1].min() - pad),
+            y_hi=float(combined[:, 1].max() + pad),
+            z_lo=float(combined[:, 2].min() - pad),
+            z_hi=float(combined[:, 2].max() + pad),
+        )
+    else:
+        bbox = dict(x_lo=-0.08, x_hi=0.20, y_lo=-0.12, y_hi=0.12, z_lo=-0.08, z_hi=0.20)
+
+    return hull_traces, bbox
 
 
-# ──────────────────────── Build Plotly figure ────────────────
-def build_figure(chains, angles, hulls, show_hulls):
+# ══════════════════════ LOAD DATA (runs once) ════════════════
+chains = load_urdf(URDF_FILE)
+hull_traces, bbox = compute_hulls_and_bbox(chains)
+
+
+# ══════════════════════ SIDEBAR CONTROLS ═════════════════════
+st.sidebar.title("🤚 Hand Simulator")
+st.sidebar.markdown("Drag sliders to move joints. The 3D plot updates instantly.")
+
+# ── Workspace toggles ───
+st.sidebar.markdown("---")
+st.sidebar.markdown("##### 🔄 Workspace Visibility")
+show_hulls = {}
+cols_toggle = st.sidebar.columns(3)
+for idx, fname in enumerate(FINGER_ORDER):
+    with cols_toggle[idx % 3]:
+        show_hulls[fname] = st.checkbox(fname, value=True, key=f"hull_{fname}")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("##### 🎛️ Joint Controls")
+
+# ── Reset button ───
+if st.sidebar.button("↺  Reset All Joints", use_container_width=True):
+    for fname in FINGER_ORDER:
+        for role in JOINT_ROLE_LABELS:
+            key = f"{fname}_{role}"
+            if key in st.session_state:
+                st.session_state[key] = 0.0
+    st.rerun()
+
+# ── Joint angle sliders ───
+angles = {}
+for fname in FINGER_ORDER:
+    chain = chains[fname]
+
+    with st.sidebar.expander(f"● {fname}", expanded=True):
+        rev_joints = []
+        ri = 0
+        for j in chain:
+            if j["type"] != "revolute":
+                continue
+            role = JOINT_ROLE_LABELS[ri] if ri < len(JOINT_ROLE_LABELS) else f"J{ri+1}"
+            rev_joints.append((role, j))
+            ri += 1
+
+        for role_name in DISPLAY_ORDER:
+            for role, j in rev_joints:
+                if role != role_name:
+                    continue
+                key = f"{fname}_{role}"
+                lo_deg = float(np.degrees(j["lower"]))
+                hi_deg = float(np.degrees(j["upper"]))
+
+                val_deg = st.slider(
+                    role,
+                    min_value=lo_deg,
+                    max_value=hi_deg,
+                    value=0.0,
+                    step=0.5,
+                    format="%.1f°",
+                    key=key,
+                )
+                angles[j["name"]] = np.radians(val_deg)
+                break
+
+
+# ══════════════════════ BUILD FIGURE (lightweight) ═══════════
+@st.fragment
+def render_chart():
+    """Runs as an isolated fragment — only this re-renders on slider change."""
     fig = go.Figure()
 
-    # Workspace hulls
-    for fname, (tips, simplices) in hulls.items():
+    # Add cached hull traces (static data, rebuilt from cache)
+    for ht in hull_traces:
+        fname = ht["finger"]
         if not show_hulls.get(fname, True):
             continue
         fig.add_trace(go.Mesh3d(
-            x=tips[:, 0], y=tips[:, 1], z=tips[:, 2],
-            i=simplices[:, 0], j=simplices[:, 1], k=simplices[:, 2],
+            x=ht["x"], y=ht["y"], z=ht["z"],
+            i=ht["i"], j=ht["j"], k=ht["k"],
             color=COLORS[fname],
             opacity=0.12,
             name=f"{fname} workspace",
@@ -178,10 +277,9 @@ def build_figure(chains, angles, hulls, show_hulls):
             showlegend=True,
         ))
 
-    # Skeleton
-    for fname, chain in chains.items():
-        pts = forward_kinematics(chain, angles)
-        # Bone line
+    # Skeleton lines + fingertips (computed from current angles)
+    for fname in FINGER_ORDER:
+        pts = forward_kinematics(chains[fname], angles)
         fig.add_trace(go.Scatter3d(
             x=pts[:, 0], y=pts[:, 1], z=pts[:, 2],
             mode="lines+markers",
@@ -191,7 +289,6 @@ def build_figure(chains, angles, hulls, show_hulls):
             hoverinfo="name",
             showlegend=False,
         ))
-        # Fingertip
         fig.add_trace(go.Scatter3d(
             x=[pts[-1, 0]], y=[pts[-1, 1]], z=[pts[-1, 2]],
             mode="markers",
@@ -207,35 +304,15 @@ def build_figure(chains, angles, hulls, show_hulls):
         showbackground=True,
         zerolinecolor="#cccccc",
     )
-    # Compute bounding box from all hull points so nothing gets clipped
-    all_pts = []
-    for fname, (tips, _) in hulls.items():
-        if show_hulls.get(fname, True):
-            all_pts.append(tips)
-    # Also include current skeleton positions
-    for fname, chain in chains.items():
-        pts = forward_kinematics(chain, angles)
-        all_pts.append(pts)
-
-    if all_pts:
-        combined = np.concatenate(all_pts, axis=0)
-        pad = 0.02  # 2 cm padding on every side
-        x_lo, x_hi = combined[:, 0].min() - pad, combined[:, 0].max() + pad
-        y_lo, y_hi = combined[:, 1].min() - pad, combined[:, 1].max() + pad
-        z_lo, z_hi = combined[:, 2].min() - pad, combined[:, 2].max() + pad
-    else:
-        x_lo, x_hi = -0.08, 0.20
-        y_lo, y_hi = -0.12, 0.12
-        z_lo, z_hi = -0.08, 0.20
 
     fig.update_layout(
         template="plotly_white",
         paper_bgcolor="white",
         plot_bgcolor="white",
         scene=dict(
-            xaxis=dict(range=[x_lo, x_hi], title="X", **axis_style),
-            yaxis=dict(range=[y_lo, y_hi], title="Y", **axis_style),
-            zaxis=dict(range=[z_lo, z_hi], title="Z", **axis_style),
+            xaxis=dict(range=[bbox["x_lo"], bbox["x_hi"]], title="X", **axis_style),
+            yaxis=dict(range=[bbox["y_lo"], bbox["y_hi"]], title="Y", **axis_style),
+            zaxis=dict(range=[bbox["z_lo"], bbox["z_hi"]], title="Z", **axis_style),
             aspectmode="cube",
             camera=dict(eye=dict(x=1.4, y=1.4, z=0.8)),
             bgcolor="white",
@@ -258,86 +335,19 @@ def build_figure(chains, angles, hulls, show_hulls):
             font=dict(size=16, color="#333333"),
         ),
     )
-    return fig
+
+    st.plotly_chart(fig, use_container_width=True, key="hand_plot")
 
 
-# ═══════════════════════ MAIN APP ════════════════════════════
-chains = load_urdf(URDF_FILE)
-hulls = compute_hulls(chains)
+# ── Render ───
+render_chart()
 
-# ── Sidebar controls ─────────────────────────────────────────
-st.sidebar.title("🤚 Hand Simulator")
-st.sidebar.markdown("Adjust joint angles below to explore the hand's range of motion.")
-
-# View presets
-st.sidebar.markdown("---")
-st.sidebar.markdown("##### 🔄 Workspace Visibility")
-show_hulls = {}
-cols_toggle = st.sidebar.columns(3)
-for idx, fname in enumerate(FINGER_TIPS.keys()):
-    with cols_toggle[idx % 3]:
-        show_hulls[fname] = st.checkbox(fname, value=True, key=f"hull_{fname}")
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("##### 🎛️ Joint Controls")
-
-# Reset button
-if st.sidebar.button("↺  Reset All Joints", use_container_width=True):
-    for fname in FINGER_TIPS.keys():
-        for role in JOINT_ROLE_LABELS:
-            key = f"{fname}_{role}"
-            if key in st.session_state:
-                st.session_state[key] = 0.0
-    st.rerun()
-
-# Joint angle sliders — one expander per finger
-angles = {}
-for fname in FINGER_TIPS.keys():
-    chain = chains[fname]
-    color_hex = COLORS[fname]
-
-    with st.sidebar.expander(f"● {fname}", expanded=True):
-        # Collect revolute joints with their role labels
-        rev_joints = []
-        ri = 0
-        for j in chain:
-            if j["type"] != "revolute":
-                continue
-            role = JOINT_ROLE_LABELS[ri] if ri < len(JOINT_ROLE_LABELS) else f"J{ri+1}"
-            rev_joints.append((role, j))
-            ri += 1
-
-        # Display in the requested order: DIP, PIP, Abd, MCP
-        for role_name in DISPLAY_ORDER:
-            for role, j in rev_joints:
-                if role != role_name:
-                    continue
-                key = f"{fname}_{role}"
-                lo_deg = float(np.degrees(j["lower"]))
-                hi_deg = float(np.degrees(j["upper"]))
-
-                val_deg = st.slider(
-                    role,
-                    min_value=lo_deg,
-                    max_value=hi_deg,
-                    value=0.0,
-                    step=0.5,
-                    format="%.1f°",
-                    key=key,
-                )
-                angles[j["name"]] = np.radians(val_deg)
-                break
-
-# ── Main area — 3D plot ──────────────────────────────────────
-fig = build_figure(chains, angles, hulls, show_hulls)
-st.plotly_chart(fig, use_container_width=True, key="hand_plot")
-
-# ── Joint limits reference table ─────────────────────────────
+# ── Joint limits reference table ─────
 with st.expander("📋 Joint Limits Reference"):
     import pandas as pd
 
     rows = []
-    for fname in FINGER_TIPS.keys():
+    for fname in FINGER_ORDER:
         chain = chains[fname]
         ri = 0
         for j in chain:
