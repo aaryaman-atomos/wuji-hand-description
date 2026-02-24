@@ -22,11 +22,12 @@ HULL_SAMPLES = 7
 OUTPUT = sys.argv[1] if len(sys.argv) > 1 else "index.html"
 
 COLORS = {
-    "Thumb":  "#e74c3c",
-    "Index":  "#27ae60",
-    "Middle": "#2980b9",
-    "Ring":   "#f39c12",
-    "Pinky":  "#8e44ad",
+    "Thumb":    "#e74c3c",
+    "Thumb 2":  "#1abc9c",
+    "Index":    "#27ae60",
+    "Middle":   "#2980b9",
+    "Ring":     "#f39c12",
+    "Pinky":    "#8e44ad",
 }
 
 FINGER_TIPS = {
@@ -37,10 +38,15 @@ FINGER_TIPS = {
     "Pinky":  "right_finger5_tip_link",
 }
 
+# Ordered list of all fingers (including Thumb 2 which is added programmatically)
+FINGER_ORDER = ["Thumb", "Thumb 2", "Index", "Middle", "Ring", "Pinky"]
+
 JOINT_ROLE_LABELS = {"default": ["MCP", "Abd", "PIP", "DIP"],
-                     "Thumb":   ["CMC", "Abd", "MCP", "IP"]}
+                     "Thumb":   ["CMC", "Abd", "MCP", "IP"],
+                     "Thumb 2": ["CMC", "Abd", "MCP", "IP"]}
 DISPLAY_ORDER = {"default": ["DIP", "PIP", "Abd", "MCP"],
-                 "Thumb":   ["IP", "MCP", "Abd", "CMC"]}
+                 "Thumb":   ["IP", "MCP", "Abd", "CMC"],
+                 "Thumb 2": ["IP", "MCP", "Abd", "CMC"]}
 
 
 # ── STL parser ──────────────────────────────────────────────
@@ -155,6 +161,65 @@ for fname, chain in chains.items():
     chains_json[fname] = jlist
 
 
+# ── Add Thumb 2 (relocated CMC joint) ───────────────────────
+print("Building Thumb 2 (relocated CMC) ...")
+
+# New CMC position in URDF coordinates (meters)
+# Sketch (27.46, 18.54, 5.54) mm → URDF (sketch_z, sketch_x, sketch_y)
+NEW_CMC_POS = np.array([0.00554, 0.02746, 0.01854])
+
+# Axis direction: vector from new CMC to axis point, in URDF coords
+# Axis point sketch (22.55, 9.91, 32.25) → URDF (32.25, 22.55, 9.91) mm
+# Direction = axis_point - cmc = (26.71, -4.91, -8.63) mm
+_axis_raw = np.array([26.71, -4.91, -8.63])
+NEW_CMC_AXIS = _axis_raw / np.linalg.norm(_axis_raw)
+
+# Get old CMC's rotation matrix from its static_T
+T_old_first = np.array(chains_json["Thumb"][0]["static_T"]).reshape(4, 4)
+R_old = T_old_first[:3, :3]
+old_axis_global = R_old[:, 1]  # local Y in global = rotation axis
+
+# Rotate old frame so its Y-axis aligns with new axis (Rodrigues' formula)
+v = np.cross(old_axis_global, NEW_CMC_AXIS)
+c_ang = float(np.dot(old_axis_global, NEW_CMC_AXIS))
+s_ang = float(np.linalg.norm(v))
+if s_ang > 1e-10:
+    vn = v / s_ang
+    K = np.array([[0, -vn[2], vn[1]], [vn[2], 0, -vn[0]], [-vn[1], vn[0], 0]])
+    R_align = np.eye(3) + K * s_ang + (K @ K) * (1 - c_ang)
+else:
+    R_align = np.eye(3) if c_ang > 0 else -np.eye(3)
+R_new = R_align @ R_old
+
+# New first-joint static transform
+T_new_first = np.eye(4)
+T_new_first[:3, :3] = R_new
+T_new_first[:3, 3] = NEW_CMC_POS
+
+# Clone the Thumb chain, replace first joint transform, rename joints/links
+thumb2_labels = JOINT_ROLE_LABELS["Thumb 2"]
+thumb2_json = []
+for i, entry in enumerate(chains_json["Thumb"]):
+    ne = {
+        "name":     entry["name"] + "_t2",
+        "type":     entry["type"],
+        "child":    entry["child"] + "_t2",
+        "static_T": T_new_first.flatten().tolist() if i == 0 else list(entry["static_T"]),
+        "axis":     list(entry["axis"]),
+        "lower":    entry["lower"],
+        "upper":    entry["upper"],
+    }
+    thumb2_json.append(ne)
+ri = 0
+for ne in thumb2_json:
+    if ne["type"] == "revolute":
+        ne["role"] = thumb2_labels[ri] if ri < len(thumb2_labels) else f"J{ri+1}"
+        ri += 1
+chains_json["Thumb 2"] = thumb2_json
+print(f"  CMC pos  (URDF): [{NEW_CMC_POS[0]*1000:.2f}, {NEW_CMC_POS[1]*1000:.2f}, {NEW_CMC_POS[2]*1000:.2f}] mm")
+print(f"  CMC axis (URDF): [{NEW_CMC_AXIS[0]:.4f}, {NEW_CMC_AXIS[1]:.4f}, {NEW_CMC_AXIS[2]:.4f}]")
+
+
 # ── Load STL meshes ─────────────────────────────────────────
 print("Loading STL meshes ...")
 mesh_dir = "meshes/right"
@@ -217,6 +282,33 @@ for fname, chain in chains.items():
             print(f"  {fname}: {len(tips)} pts → {len(hull.simplices)} faces")
         except Exception as e:
             print(f"  {fname}: hull failed ({e})")
+
+# Hull for Thumb 2 (uses chains_json since its chain was built programmatically)
+t2chain = chains_json["Thumb 2"]
+t2rev = [j for j in t2chain if j["type"] == "revolute"]
+t2ranges = [np.linspace(j["lower"], j["upper"], HULL_SAMPLES) for j in t2rev]
+t2tips = []
+for combo in itertools.product(*t2ranges):
+    T = np.eye(4); ri = 0
+    for j in t2chain:
+        T_st = np.array(j["static_T"]).reshape(4, 4)
+        T = T @ T_st
+        if j["type"] == "revolute":
+            T = T @ get_revolute_transform(j["axis"], combo[ri]); ri += 1
+    t2tips.append(T[:3, 3].tolist())
+t2arr = np.array(t2tips)
+if len(t2arr) >= 4:
+    try:
+        h2 = ConvexHull(t2arr)
+        hulls_json["Thumb 2"] = {
+            "vertices": t2arr.tolist(),
+            "faces_i": h2.simplices[:, 0].tolist(),
+            "faces_j": h2.simplices[:, 1].tolist(),
+            "faces_k": h2.simplices[:, 2].tolist(),
+        }
+        print(f"  Thumb 2: {len(t2tips)} pts → {len(h2.simplices)} faces")
+    except Exception as e:
+        print(f"  Thumb 2: hull failed ({e})")
 
 # Compute global bounding box
 all_pts = []
@@ -329,7 +421,7 @@ const HULLS  = {json.dumps(hulls_json)};
 const MESHES = {json.dumps(meshes_json)};
 const BBOX   = {json.dumps(bbox)};
 const COLORS = {json.dumps(COLORS)};
-const FINGER_ORDER = {json.dumps(list(FINGER_TIPS.keys()))};
+const FINGER_ORDER = {json.dumps(FINGER_ORDER)};
 const DISPLAY_ORDER = {json.dumps(DISPLAY_ORDER)};
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
@@ -489,6 +581,13 @@ function fkLinkTransforms(chain) {{
   return transforms;
 }}
 
+// Mesh lookup: Thumb 2 links reuse original Thumb meshes (strip _t2 suffix)
+function meshLookup(linkName) {{
+  if (MESHES[linkName]) return MESHES[linkName];
+  if (linkName.endsWith('_t2')) return MESHES[linkName.slice(0, -3)] || null;
+  return null;
+}}
+
 // ── Build initial Plotly traces ──────────────────────────
 function buildTraces() {{
   const traces = [];
@@ -517,7 +616,7 @@ function buildTraces() {{
     const chain = CHAINS[f];
     const linkTransforms = fkLinkTransforms(chain);
     chain.forEach(j => {{
-      const m = MESHES[j.child];
+      const m = meshLookup(j.child);
       if (!m) return;
       const T = linkTransforms[j.child];
       const tv = transformVerts(m.verts, T);
@@ -633,7 +732,7 @@ function updatePlot() {{
       yBatch.push([tip[1]]);
       zBatch.push([tip[2]]);
     }} else if (tr._kind === 'mesh' && tr._finger) {{
-      const m = MESHES[tr._link];
+      const m = meshLookup(tr._link);
       if (!m) return;
       const T = allLinkT[tr._link];
       if (!T) return;
