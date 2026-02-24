@@ -377,7 +377,10 @@ const angles = {{}};
 const hullVisible = {{}};
 let meshVisible = true;
 let vectorVisible = true;
-const ARROW_LEN = 0.015;   // 15 mm arrow length
+const SHAFT_LEN = 0.013;   // 13 mm shaft
+const HEAD_LEN  = 0.004;   // 4 mm arrowhead cone
+const HEAD_RAD  = 0.0018;  // 1.8 mm arrowhead base radius
+const HEAD_SIDES = 8;      // octagonal cone
 FINGER_ORDER.forEach(f => hullVisible[f] = true);
 FINGER_ORDER.forEach(f => {{
   CHAINS[f].forEach(j => {{ if (j.type==='revolute') angles[j.name]=0; }});
@@ -397,7 +400,7 @@ function fk(chain) {{
   return pts;
 }}
 
-// ── FK — returns tip position + Z-axis direction (for tip vectors) ──
+// ── FK — returns tip position + palmar direction (X-axis of tip frame) ──
 function fkTipFrame(chain) {{
   let T = mat4();
   chain.forEach(j => {{
@@ -406,8 +409,70 @@ function fkTipFrame(chain) {{
       T = mat4Mul(T, revoluteT(j.axis, angles[j.name] || 0));
     }}
   }});
-  // Z-axis of the tip frame = 3rd column of rotation matrix (row-major)
-  return {{ pos: getPos(T), zAxis: [T[2], T[6], T[10]] }};
+  // X-axis of the tip frame = 1st column of rotation matrix (row-major)
+  // This points toward the palmar side (front of the finger)
+  return {{ pos: getPos(T), dir: [T[0], T[4], T[8]] }};
+}}
+
+// ── Build an arrow (shaft line + cone head) given base, direction, color ──
+function buildArrowTraces(pos, dir, color, finger) {{
+  // Normalize direction
+  const len = Math.sqrt(dir[0]*dir[0]+dir[1]*dir[1]+dir[2]*dir[2]);
+  const d = [dir[0]/len, dir[1]/len, dir[2]/len];
+  // Shaft end
+  const se = [pos[0]+d[0]*SHAFT_LEN, pos[1]+d[1]*SHAFT_LEN, pos[2]+d[2]*SHAFT_LEN];
+  // Arrow tip (end of head)
+  const at = [se[0]+d[0]*HEAD_LEN, se[1]+d[1]*HEAD_LEN, se[2]+d[2]*HEAD_LEN];
+
+  // Find two perpendicular vectors to d
+  let perp1, perp2;
+  const absD = [Math.abs(d[0]), Math.abs(d[1]), Math.abs(d[2])];
+  // Choose a non-parallel reference
+  const ref = absD[0] < 0.9 ? [1,0,0] : [0,1,0];
+  // perp1 = d × ref  (normalized)
+  perp1 = [d[1]*ref[2]-d[2]*ref[1], d[2]*ref[0]-d[0]*ref[2], d[0]*ref[1]-d[1]*ref[0]];
+  const plen1 = Math.sqrt(perp1[0]*perp1[0]+perp1[1]*perp1[1]+perp1[2]*perp1[2]);
+  perp1 = [perp1[0]/plen1, perp1[1]/plen1, perp1[2]/plen1];
+  // perp2 = d × perp1
+  perp2 = [d[1]*perp1[2]-d[2]*perp1[1], d[2]*perp1[0]-d[0]*perp1[2], d[0]*perp1[1]-d[1]*perp1[0]];
+
+  // Build cone mesh vertices: tip + base ring
+  const vx=[at[0]], vy=[at[1]], vz=[at[2]]; // index 0 = tip
+  for (let k=0; k<HEAD_SIDES; k++) {{
+    const a = 2*Math.PI*k/HEAD_SIDES;
+    const ca = Math.cos(a)*HEAD_RAD, sa = Math.sin(a)*HEAD_RAD;
+    vx.push(se[0] + perp1[0]*ca + perp2[0]*sa);
+    vy.push(se[1] + perp1[1]*ca + perp2[1]*sa);
+    vz.push(se[2] + perp1[2]*ca + perp2[2]*sa);
+  }}
+  // Faces: tip (0) to each adjacent pair on the ring
+  const fi=[], fj=[], fk_=[];
+  for (let k=0; k<HEAD_SIDES; k++) {{
+    fi.push(0);
+    fj.push(1+k);
+    fk_.push(1+(k+1)%HEAD_SIDES);
+  }}
+
+  const shaft = {{
+    type:'scatter3d',
+    x:[pos[0], se[0]], y:[pos[1], se[1]], z:[pos[2], se[2]],
+    mode:'lines', line:{{color:color, width:5}},
+    name:finger+' tip vector', hoverinfo:'name', showlegend:false,
+    visible: vectorVisible,
+    _finger:finger, _kind:'vector_shaft',
+  }};
+  const head = {{
+    type:'mesh3d',
+    x:vx, y:vy, z:vz,
+    i:fi, j:fj, k:fk_,
+    color:color, opacity:1,
+    flatshading:true,
+    lighting:{{ambient:0.8, diffuse:0.6, specular:0.3}},
+    name:finger+' tip vector', hoverinfo:'name', showlegend:false,
+    visible: vectorVisible,
+    _finger:finger, _kind:'vector_head',
+  }};
+  return [shaft, head];
 }}
 
 // ── FK — returns per-link transforms (for meshes) ────────
@@ -506,21 +571,11 @@ function buildTraces() {{
     }});
   }});
 
-  // 4) Tip direction vectors (Cone traces — normal to flexion axis)
+  // 4) Tip direction vectors (line + arrowhead — palmar direction)
   FINGER_ORDER.forEach(f => {{
     const tip = fkTipFrame(CHAINS[f]);
-    traces.push({{
-      type:'cone',
-      x:[tip.pos[0]], y:[tip.pos[1]], z:[tip.pos[2]],
-      u:[tip.zAxis[0]], v:[tip.zAxis[1]], w:[tip.zAxis[2]],
-      sizemode:'absolute', sizeref: ARROW_LEN,
-      anchor:'tail',
-      colorscale:[[0,COLORS[f]],[1,COLORS[f]]],
-      showscale:false,
-      name:f+' tip vector', hoverinfo:'name', showlegend:false,
-      visible: vectorVisible,
-      _finger:f, _kind:'vector',
-    }});
+    const arrows = buildArrowTraces(tip.pos, tip.dir, COLORS[f], f);
+    arrows.forEach(t => traces.push(t));
   }});
 
   return traces;
@@ -559,9 +614,9 @@ function updatePlot() {{
   const indices = [];
   const xBatch = [], yBatch = [], zBatch = [];
 
-  // Separate batch for Cone traces (x, y, z + u, v, w)
-  const vecIdx = [], vecX = [], vecY = [], vecZ = [];
-  const vecU = [], vecV = [], vecW = [];
+  // Precompute tip frames for arrow updates
+  const tipFrames = {{}};
+  FINGER_ORDER.forEach(f => {{ tipFrames[f] = fkTipFrame(CHAINS[f]); }});
 
   data.forEach((tr, idx) => {{
     if (tr._kind === 'skel') {{
@@ -587,25 +642,24 @@ function updatePlot() {{
       xBatch.push(tv.x);
       yBatch.push(tv.y);
       zBatch.push(tv.z);
-    }} else if (tr._kind === 'vector') {{
-      const tip = fkTipFrame(CHAINS[tr._finger]);
-      vecIdx.push(idx);
-      vecX.push([tip.pos[0]]);
-      vecY.push([tip.pos[1]]);
-      vecZ.push([tip.pos[2]]);
-      vecU.push([tip.zAxis[0]]);
-      vecV.push([tip.zAxis[1]]);
-      vecW.push([tip.zAxis[2]]);
+    }} else if (tr._kind === 'vector_shaft' || tr._kind === 'vector_head') {{
+      // Rebuild arrow geometry from new tip frame
+      const tf = tipFrames[tr._finger];
+      const arrows = buildArrowTraces(tf.pos, tf.dir, COLORS[tr._finger], tr._finger);
+      const arrowTr = tr._kind === 'vector_shaft' ? arrows[0] : arrows[1];
+      indices.push(idx);
+      xBatch.push(arrowTr.x);
+      yBatch.push(arrowTr.y);
+      zBatch.push(arrowTr.z);
     }}
   }});
 
   if (indices.length > 0) {{
     Plotly.restyle('plot', {{x: xBatch, y: yBatch, z: zBatch}}, indices);
   }}
-  if (vecIdx.length > 0) {{
-    Plotly.restyle('plot', {{x: vecX, y: vecY, z: vecZ,
-                            u: vecU, v: vecV, w: vecW}}, vecIdx);
-  }}
+
+  // Also update mesh3d face indices for arrowheads (i, j, k don't change
+  // but Plotly needs them when x/y/z length changes — they stay the same here)
 }}
 
 // ── Build sidebar sliders ────────────────────────────────
@@ -711,7 +765,7 @@ vectorToggleBtn.addEventListener('click', () => {{
   const data = document.getElementById('plot').data;
   const indices = [];
   data.forEach((tr, idx) => {{
-    if (tr._kind === 'vector') indices.push(idx);
+    if (tr._kind === 'vector_shaft' || tr._kind === 'vector_head') indices.push(idx);
   }});
   if (indices.length > 0) {{
     Plotly.restyle('plot', {{visible: vectorVisible}}, indices);
