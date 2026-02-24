@@ -9,6 +9,8 @@ Usage:
 """
 import sys
 import json
+import struct
+import os
 import xml.etree.ElementTree as ET
 import itertools
 import numpy as np
@@ -39,6 +41,42 @@ JOINT_ROLE_LABELS = {"default": ["MCP", "Abd", "PIP", "DIP"],
                      "Thumb":   ["CMC", "Abd", "MCP", "IP"]}
 DISPLAY_ORDER = {"default": ["DIP", "PIP", "Abd", "MCP"],
                  "Thumb":   ["IP", "MCP", "Abd", "CMC"]}
+
+
+# ── STL parser ──────────────────────────────────────────────
+def parse_stl(filepath):
+    """Read a binary STL file. Returns (unique_verts, face_indices)."""
+    with open(filepath, "rb") as f:
+        f.read(80)  # skip header
+        num_tris = struct.unpack("<I", f.read(4))[0]
+        raw_verts = []
+        for _ in range(num_tris):
+            f.read(12)  # skip normal (3 floats)
+            v1 = struct.unpack("<3f", f.read(12))
+            v2 = struct.unpack("<3f", f.read(12))
+            v3 = struct.unpack("<3f", f.read(12))
+            f.read(2)   # skip attribute
+            raw_verts.extend([v1, v2, v3])
+
+    # Deduplicate vertices
+    vert_map = {}
+    unique = []
+    faces_i, faces_j, faces_k = [], [], []
+    for tri in range(num_tris):
+        ids = []
+        for vi in range(3):
+            v = raw_verts[tri * 3 + vi]
+            # Round to avoid floating-point duplicates
+            key = (round(v[0], 6), round(v[1], 6), round(v[2], 6))
+            if key not in vert_map:
+                vert_map[key] = len(unique)
+                unique.append(list(key))
+            ids.append(vert_map[key])
+        faces_i.append(ids[0])
+        faces_j.append(ids[1])
+        faces_k.append(ids[2])
+
+    return unique, faces_i, faces_j, faces_k
 
 
 # ── Kinematics (same as sim_hand.py) ────────────────────────
@@ -102,19 +140,51 @@ for fname, chain in chains.items():
         entry = {
             "name": j["name"],
             "type": j["type"],
+            "child": j["child"],
             "static_T": T.flatten().tolist(),
             "axis": j["axis"],
             "lower": j["lower"],
             "upper": j["upper"],
         }
         jlist.append(entry)
-    # Tag revolute joints with role labels
     ri = 0
     for entry in jlist:
         if entry["type"] == "revolute":
             entry["role"] = labels[ri] if ri < len(labels) else f"J{ri+1}"
             ri += 1
     chains_json[fname] = jlist
+
+
+# ── Load STL meshes ─────────────────────────────────────────
+print("Loading STL meshes ...")
+mesh_dir = "meshes/right"
+meshes_json = {}
+
+# Palm mesh (identity transform, no chain)
+palm_stl = os.path.join(mesh_dir, "right_palm_link.STL")
+if os.path.exists(palm_stl):
+    verts, fi, fj, fk = parse_stl(palm_stl)
+    meshes_json["right_palm_link"] = {
+        "verts": verts, "i": fi, "j": fj, "k": fk,
+        "finger": None, "chain_idx": -1,
+    }
+    print(f"  palm: {len(verts)} verts, {len(fi)} faces")
+
+# Finger link meshes — map each child link to its chain position
+for fname, chain in chains.items():
+    for idx, j in enumerate(chain):
+        link_name = j["child"]
+        stl_file = os.path.join(mesh_dir, f"{link_name}.STL")
+        if os.path.exists(stl_file):
+            verts, fi, fj, fk = parse_stl(stl_file)
+            meshes_json[link_name] = {
+                "verts": verts, "i": fi, "j": fj, "k": fk,
+                "finger": fname, "chain_idx": idx,
+            }
+
+total_verts = sum(len(m["verts"]) for m in meshes_json.values())
+total_faces = sum(len(m["i"]) for m in meshes_json.values())
+print(f"  Total: {len(meshes_json)} meshes, {total_verts} unique verts, {total_faces} faces")
 
 
 # ── Precompute workspace hulls ──────────────────────────────
@@ -138,7 +208,6 @@ for fname, chain in chains.items():
     if len(tips_arr) >= 4:
         try:
             hull = ConvexHull(tips_arr)
-            # Only keep hull vertices for smaller payload
             hulls_json[fname] = {
                 "vertices": tips_arr.tolist(),
                 "faces_i": hull.simplices[:,0].tolist(),
@@ -160,6 +229,21 @@ bbox = {
     "y": [float(all_pts[:,1].min()-pad), float(all_pts[:,1].max()+pad)],
     "z": [float(all_pts[:,2].min()-pad), float(all_pts[:,2].max()+pad)],
 }
+
+
+# ── Round floats for smaller JSON ───────────────────────────
+def round_nested(obj, decimals=5):
+    if isinstance(obj, float):
+        return round(obj, decimals)
+    if isinstance(obj, list):
+        return [round_nested(x, decimals) for x in obj]
+    if isinstance(obj, dict):
+        return {k: round_nested(v, decimals) for k, v in obj.items()}
+    return obj
+
+meshes_json = round_nested(meshes_json)
+chains_json = round_nested(chains_json)
+hulls_json = round_nested(hulls_json)
 
 
 # ── Generate HTML ───────────────────────────────────────────
@@ -192,10 +276,10 @@ html = f"""<!DOCTYPE html>
   .slider-row label {{ width: 36px; font-size: 11px; font-weight: 600; color: #666; text-align: right; flex-shrink: 0; }}
   .slider-row input[type=range] {{ flex: 1; height: 6px; cursor: pointer; }}
   .slider-row .val {{ width: 52px; font-size: 11px; color: #888; text-align: left; flex-shrink: 0; }}
-  .hull-toggles {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }}
-  .hull-toggle {{ font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer;
-                  border: 2px solid; font-weight: 600; transition: opacity 0.15s; }}
-  .hull-toggle.off {{ opacity: 0.35; }}
+  .toggle-section {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }}
+  .toggle-btn {{ font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer;
+                 border: 2px solid; font-weight: 600; transition: opacity 0.15s; }}
+  .toggle-btn.off {{ opacity: 0.35; }}
   .btn {{ display: block; width: 100%; padding: 8px; margin-top: 8px; border: none; border-radius: 6px;
           background: #555; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }}
   .btn:hover {{ background: #333; }}
@@ -209,7 +293,13 @@ html = f"""<!DOCTYPE html>
     <p style="font-size:12px;color:#888;margin-bottom:8px;">Drag sliders to move joints in real time.</p>
 
     <h2>🔄 Workspace Visibility</h2>
-    <div class="hull-toggles" id="hullToggles"></div>
+    <div class="toggle-section" id="hullToggles"></div>
+
+    <h2>🦴 Mesh Visibility</h2>
+    <div class="toggle-section">
+      <div class="toggle-btn" id="meshToggle"
+           style="border-color:#888;color:#888;background:#8881">Hand Mesh</div>
+    </div>
 
     <h2>🎛️ Joint Controls</h2>
     <div id="sliderContainer"></div>
@@ -230,15 +320,19 @@ html = f"""<!DOCTYPE html>
 // ── Embedded data (precomputed by build_html.py) ─────────
 const CHAINS = {json.dumps(chains_json)};
 const HULLS  = {json.dumps(hulls_json)};
+const MESHES = {json.dumps(meshes_json)};
 const BBOX   = {json.dumps(bbox)};
 const COLORS = {json.dumps(COLORS)};
 const FINGER_ORDER = {json.dumps(list(FINGER_TIPS.keys()))};
 const DISPLAY_ORDER = {json.dumps(DISPLAY_ORDER)};
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;
+const MESH_COLOR = '#c8cdd0';
+const MESH_OPACITY = 0.55;
 
-// ── Matrix helpers (column-major 4×4 stored as flat 16-element array, row-major) ──
+// ── Matrix helpers (row-major 4×4 as flat 16-element array) ──
 function mat4() {{ return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]; }}
+function mat4Copy(m) {{ return m.slice(); }}
 function mat4Mul(a, b) {{
   const o = new Array(16);
   for (let r=0;r<4;r++) for (let c=0;c<4;c++) {{
@@ -259,17 +353,29 @@ function revoluteT(axis, angle) {{
 }}
 function getPos(T) {{ return [T[3], T[7], T[11]]; }}
 
-// ── State ────────────────────────────────────────────────
-const angles = {{}};  // "jointName" → radians
-const hullVisible = {{}};
-FINGER_ORDER.forEach(f => hullVisible[f] = true);
+// Transform an array of [x,y,z] vertices by a 4×4 matrix, return {{x[], y[], z[]}}
+function transformVerts(verts, T) {{
+  const N = verts.length;
+  const xs = new Float64Array(N), ys = new Float64Array(N), zs = new Float64Array(N);
+  for (let i=0; i<N; i++) {{
+    const [vx,vy,vz] = verts[i];
+    xs[i] = T[0]*vx + T[1]*vy + T[2]*vz + T[3];
+    ys[i] = T[4]*vx + T[5]*vy + T[6]*vz + T[7];
+    zs[i] = T[8]*vx + T[9]*vy + T[10]*vz + T[11];
+  }}
+  return {{x: Array.from(xs), y: Array.from(ys), z: Array.from(zs)}};
+}}
 
-// Initialise angles to 0
+// ── State ────────────────────────────────────────────────
+const angles = {{}};
+const hullVisible = {{}};
+let meshVisible = true;
+FINGER_ORDER.forEach(f => hullVisible[f] = true);
 FINGER_ORDER.forEach(f => {{
   CHAINS[f].forEach(j => {{ if (j.type==='revolute') angles[j.name]=0; }});
 }});
 
-// ── FK ───────────────────────────────────────────────────
+// ── FK — returns joint positions (for skeleton) ──────────
 function fk(chain) {{
   let T = mat4();
   const pts = [[0,0,0]];
@@ -283,10 +389,67 @@ function fk(chain) {{
   return pts;
 }}
 
+// ── FK — returns per-link transforms (for meshes) ────────
+function fkLinkTransforms(chain) {{
+  let T = mat4();
+  const transforms = {{}};
+  chain.forEach(j => {{
+    T = mat4Mul(T, j.static_T);
+    if (j.type === 'revolute') {{
+      T = mat4Mul(T, revoluteT(j.axis, angles[j.name] || 0));
+    }}
+    transforms[j.child] = mat4Copy(T);
+  }});
+  return transforms;
+}}
+
 // ── Build initial Plotly traces ──────────────────────────
 function buildTraces() {{
   const traces = [];
-  // Hulls first (so skeleton draws on top)
+
+  // 1) Mesh traces (render first, behind everything)
+  // Palm mesh — identity transform
+  const palmMesh = MESHES['right_palm_link'];
+  if (palmMesh) {{
+    traces.push({{
+      type:'mesh3d',
+      x: palmMesh.verts.map(v=>v[0]),
+      y: palmMesh.verts.map(v=>v[1]),
+      z: palmMesh.verts.map(v=>v[2]),
+      i: palmMesh.i, j: palmMesh.j, k: palmMesh.k,
+      color: MESH_COLOR, opacity: MESH_OPACITY,
+      flatshading: true,
+      lighting: {{ambient:0.7, diffuse:0.5, specular:0.2, roughness:0.8}},
+      name: 'Palm mesh', hoverinfo:'skip', showlegend:false,
+      visible: meshVisible,
+      _kind: 'mesh', _link: 'right_palm_link',
+    }});
+  }}
+
+  // Finger link meshes
+  FINGER_ORDER.forEach(f => {{
+    const chain = CHAINS[f];
+    const linkTransforms = fkLinkTransforms(chain);
+    chain.forEach(j => {{
+      const m = MESHES[j.child];
+      if (!m) return;
+      const T = linkTransforms[j.child];
+      const tv = transformVerts(m.verts, T);
+      traces.push({{
+        type:'mesh3d',
+        x: tv.x, y: tv.y, z: tv.z,
+        i: m.i, j: m.j, k: m.k,
+        color: MESH_COLOR, opacity: MESH_OPACITY,
+        flatshading: true,
+        lighting: {{ambient:0.7, diffuse:0.5, specular:0.2, roughness:0.8}},
+        name: j.child, hoverinfo:'skip', showlegend:false,
+        visible: meshVisible,
+        _kind: 'mesh', _link: j.child, _finger: f,
+      }});
+    }});
+  }});
+
+  // 2) Workspace hulls
   FINGER_ORDER.forEach(f => {{
     const h = HULLS[f];
     if (!h) return;
@@ -301,12 +464,13 @@ function buildTraces() {{
       _finger: f, _kind: 'hull',
     }});
   }});
-  // Skeleton lines + tips
+
+  // 3) Skeleton lines + tips (on top)
   FINGER_ORDER.forEach(f => {{
     const pts = fk(CHAINS[f]);
-    const xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]), zs=pts.map(p=>p[2]);
     traces.push({{
-      type:'scatter3d', x:xs, y:ys, z:zs,
+      type:'scatter3d',
+      x:pts.map(p=>p[0]), y:pts.map(p=>p[1]), z:pts.map(p=>p[2]),
       mode:'lines+markers',
       line:{{color:'black',width:5}}, marker:{{size:3,color:'black'}},
       name:f+' skeleton', hoverinfo:'name', showlegend:false,
@@ -320,6 +484,7 @@ function buildTraces() {{
       _finger:f, _kind:'tip',
     }});
   }});
+
   return traces;
 }}
 
@@ -342,28 +507,55 @@ const layout = {{
 const initialTraces = buildTraces();
 Plotly.newPlot('plot', initialTraces, layout, {{responsive:true}});
 
-// ── Fast update (no relayout, just data swap) ────────────
+// ── Fast update — batch all restyle calls ────────────────
 function updatePlot() {{
-  const plotDiv = document.getElementById('plot');
-  const data = plotDiv.data;
-  // Walk traces and update skeleton / tip ones
+  const data = document.getElementById('plot').data;
+
+  // Precompute all link transforms for all fingers
+  const allLinkT = {{}};
+  FINGER_ORDER.forEach(f => {{
+    Object.assign(allLinkT, fkLinkTransforms(CHAINS[f]));
+  }});
+
+  // Batch updates
+  const indices = [];
+  const xBatch = [], yBatch = [], zBatch = [];
+
   data.forEach((tr, idx) => {{
     if (tr._kind === 'skel') {{
       const pts = fk(CHAINS[tr._finger]);
-      Plotly.restyle('plot', {{
-        x:[pts.map(p=>p[0])], y:[pts.map(p=>p[1])], z:[pts.map(p=>p[2])]
-      }}, [idx]);
+      indices.push(idx);
+      xBatch.push(pts.map(p=>p[0]));
+      yBatch.push(pts.map(p=>p[1]));
+      zBatch.push(pts.map(p=>p[2]));
     }} else if (tr._kind === 'tip') {{
       const pts = fk(CHAINS[tr._finger]);
       const tip = pts[pts.length-1];
-      Plotly.restyle('plot', {{x:[[tip[0]]], y:[[tip[1]]], z:[[tip[2]]]}}, [idx]);
+      indices.push(idx);
+      xBatch.push([tip[0]]);
+      yBatch.push([tip[1]]);
+      zBatch.push([tip[2]]);
+    }} else if (tr._kind === 'mesh' && tr._finger) {{
+      const m = MESHES[tr._link];
+      if (!m) return;
+      const T = allLinkT[tr._link];
+      if (!T) return;
+      const tv = transformVerts(m.verts, T);
+      indices.push(idx);
+      xBatch.push(tv.x);
+      yBatch.push(tv.y);
+      zBatch.push(tv.z);
     }}
   }});
+
+  if (indices.length > 0) {{
+    Plotly.restyle('plot', {{x: xBatch, y: yBatch, z: zBatch}}, indices);
+  }}
 }}
 
 // ── Build sidebar sliders ────────────────────────────────
 const sliderContainer = document.getElementById('sliderContainer');
-const sliderEls = {{}};  // "jointName" → {{input, valSpan}}
+const sliderEls = {{}};
 
 FINGER_ORDER.forEach(f => {{
   const group = document.createElement('div');
@@ -375,11 +567,9 @@ FINGER_ORDER.forEach(f => {{
   title.textContent = '● ' + f;
   group.appendChild(title);
 
-  // Collect revolute joints with roles
   const revJoints = [];
   CHAINS[f].forEach(j => {{ if (j.type==='revolute') revJoints.push(j); }});
 
-  // Display in desired order (per-finger)
   const order = DISPLAY_ORDER[f] || DISPLAY_ORDER['default'];
   order.forEach(role => {{
     const j = revJoints.find(jj => jj.role === role);
@@ -424,7 +614,7 @@ FINGER_ORDER.forEach(f => {{
 const toggleContainer = document.getElementById('hullToggles');
 FINGER_ORDER.forEach(f => {{
   const btn = document.createElement('div');
-  btn.className = 'hull-toggle';
+  btn.className = 'toggle-btn';
   btn.textContent = f;
   btn.style.borderColor = COLORS[f];
   btn.style.color = COLORS[f];
@@ -433,7 +623,6 @@ FINGER_ORDER.forEach(f => {{
   btn.addEventListener('click', () => {{
     hullVisible[f] = !hullVisible[f];
     btn.classList.toggle('off', !hullVisible[f]);
-    // Find hull trace index
     const data = document.getElementById('plot').data;
     data.forEach((tr, idx) => {{
       if (tr._kind === 'hull' && tr._finger === f) {{
@@ -442,6 +631,21 @@ FINGER_ORDER.forEach(f => {{
     }});
   }});
   toggleContainer.appendChild(btn);
+}});
+
+// ── Mesh toggle button ───────────────────────────────────
+const meshToggleBtn = document.getElementById('meshToggle');
+meshToggleBtn.addEventListener('click', () => {{
+  meshVisible = !meshVisible;
+  meshToggleBtn.classList.toggle('off', !meshVisible);
+  const data = document.getElementById('plot').data;
+  const indices = [];
+  data.forEach((tr, idx) => {{
+    if (tr._kind === 'mesh') indices.push(idx);
+  }});
+  if (indices.length > 0) {{
+    Plotly.restyle('plot', {{visible: meshVisible}}, indices);
+  }}
 }});
 
 // ── Reset ────────────────────────────────────────────────
@@ -460,5 +664,6 @@ function resetAll() {{
 
 with open(OUTPUT, "w") as f:
     f.write(html)
-print(f"✅  Written to {OUTPUT}  ({len(html)//1024} KB)")
+size_kb = len(html) // 1024
+print(f"✅  Written to {OUTPUT}  ({size_kb} KB / {size_kb/1024:.1f} MB)")
 print(f"   Open in any browser — or host on GitHub Pages / Notion embed.")

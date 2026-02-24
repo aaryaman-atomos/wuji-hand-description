@@ -1,0 +1,623 @@
+
+Dim swApp As Object
+Dim swModel As Object
+Dim swAssembly As Object
+Dim swComponent As Object
+Dim swMathUtil As Object
+Dim swXform As Object
+Dim transformData(15) As Double
+Dim boolstatus As Boolean
+Dim strCompName As String
+
+Sub main()
+    Set swApp = Application.SldWorks
+    
+    ' Create New Assembly
+    Set swModel = swApp.NewDocument("C:\ProgramData\SolidWorks\SOLIDWORKS 2024\templates\Assembly.asmdot", 0, 0, 0)
+    Set swAssembly = swModel
+    Set swMathUtil = swApp.GetMathUtility
+    
+    ' Turn off graphics update for speed
+    swModel.ViewZoomtofit2
+
+    ' --- Link: right_palm_link ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_palm_link.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 1.0
+        transformData(1) = 0.0
+        transformData(2) = 0.0
+        transformData(3) = 0.0 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.0
+        transformData(5) = 1.0
+        transformData(6) = 0.0
+        transformData(7) = 0.0
+        transformData(8) = 0.0
+        transformData(9) = 0.0
+        transformData(10) = 1.0
+        transformData(11) = 0.0
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger1_link1 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger1_link1.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.6938766148580272
+        transformData(1) = 0.42293651306183244
+        transformData(2) = 0.5828035254459802
+        transformData(3) = 0.0085244 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = -0.6218376049046364
+        transformData(5) = -0.05619145108013546
+        transformData(6) = 0.7811277193596281
+        transformData(7) = 0.020575
+        transformData(8) = 0.36311600967133106
+        transformData(9) = -0.9044154060743365
+        transformData(10) = 0.22400789444964353
+        transformData(11) = 0.028712
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger1_link2 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger1_link2.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.38128508705171843
+        transformData(1) = -0.9244355788405126
+        transformData(2) = 0.006367335845530009
+        transformData(3) = 0.010915568339843683 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.2694135421052043
+        transformData(5) = 0.11770349017743201
+        transformData(6) = 0.9558044945125432
+        transformData(7) = 0.03490889452074776
+        transformData(8) = -0.8843291387952172
+        transformData(9) = -0.36271855339072123
+        transformData(10) = 0.29393404924209054
+        transformData(11) = 0.03559486602067819
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger1_link3 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger1_link3.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.745671720344653
+        transformData(1) = 0.6661787385491753
+        transformData(2) = -0.01340051429144657
+        transformData(3) = 0.012124915924050659 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = -0.2168329062579193
+        transformData(5) = 0.26162545694374784
+        transformData(6) = 0.9404975337781165
+        transformData(7) = 0.06797503315547213
+        transformData(8) = 0.630045376335697
+        transformData(9) = -0.6983967415330663
+        transformData(10) = 0.33953617653205254
+        transformData(11) = 0.04597656818278344
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger1_link4 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger1_link4.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.745671720344653
+        transformData(1) = 0.6661787385491753
+        transformData(2) = -0.01340051429144657
+        transformData(3) = 0.011563056067815691 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = -0.2168329062579193
+        transformData(5) = 0.26162545694374784
+        transformData(6) = 0.9404975337781165
+        transformData(7) = 0.09565430403769062
+        transformData(8) = 0.630045376335697
+        transformData(9) = -0.6983967415330663
+        transformData(10) = 0.33953617653205254
+        transformData(11) = 0.05616748457586225
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger1_tip_link ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger1_tip_link.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.745671720344653
+        transformData(1) = 0.6661787385491753
+        transformData(2) = -0.01340051429144657
+        transformData(3) = 0.01051467677624733 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = -0.2168329062579193
+        transformData(5) = 0.26162545694374784
+        transformData(6) = 0.9404975337781165
+        transformData(7) = 0.12257068543703827
+        transformData(8) = 0.630045376335697
+        transformData(9) = -0.6983967415330663
+        transformData(10) = 0.33953617653205254
+        transformData(11) = 0.06491813048449452
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger2_link1 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger2_link1.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9738150244002329
+        transformData(1) = 0.22283364622554344
+        transformData(2) = -0.04504957671502573
+        transformData(3) = -0.0058701 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = -0.21594460461221368
+        transformData(5) = 0.9686073130551214
+        transformData(6) = 0.12315762597181201
+        transformData(7) = 0.029434
+        transformData(8) = 0.07107901231199219
+        transformData(9) = -0.11020453350914107
+        transformData(10) = 0.9913640778254901
+        transformData(11) = 0.091917
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger2_link2 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger2_link2.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9738150244002329
+        transformData(1) = 0.22283364622554344
+        transformData(2) = -0.04504957671502573
+        transformData(3) = -0.00390790525317959 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = -0.21594460461221368
+        transformData(5) = 0.9686073130551214
+        transformData(6) = 0.12315762597181201
+        transformData(7) = 0.029451552373740378
+        transformData(8) = 0.07107901231199219
+        transformData(9) = -0.11020453350914107
+        transformData(10) = 0.9913640778254901
+        transformData(11) = 0.09603883013838835
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger2_link3 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger2_link3.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9737551339242148
+        transformData(1) = 0.22309521463722992
+        transformData(2) = -0.04504957671502573
+        transformData(3) = -0.010498791200744009 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = -0.21620477442909933
+        transformData(5) = 0.9685492732324203
+        transformData(6) = 0.12315762597181201
+        transformData(7) = 0.03584924335866828
+        transformData(8) = 0.07110861178715942
+        transformData(9) = -0.11018543700017162
+        transformData(10) = 0.9913640778254901
+        transformData(11) = 0.13894250185279491
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger2_link4 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger2_link4.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9737551339242148
+        transformData(1) = 0.22309521463722992
+        transformData(2) = -0.04504957671502573
+        transformData(3) = -0.011827753713837267 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = -0.21620477442909933
+        transformData(5) = 0.9685492732324203
+        transformData(6) = 0.12315762597181201
+        transformData(7) = 0.039482393324836725
+        transformData(8) = 0.07110861178715942
+        transformData(9) = -0.11018543700017162
+        transformData(10) = 0.9913640778254901
+        transformData(11) = 0.16818774214864687
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger2_tip_link ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger2_tip_link.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9737551339242148
+        transformData(1) = 0.22309521463722992
+        transformData(2) = -0.04504957671502573
+        transformData(3) = -0.014084555006449397 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = -0.21620477442909933
+        transformData(5) = 0.9685492732324203
+        transformData(6) = 0.12315762597181201
+        transformData(7) = 0.04308392728961492
+        transformData(8) = 0.07110861178715942
+        transformData(9) = -0.11018543700017162
+        transformData(10) = 0.9913640778254901
+        transformData(11) = 0.19527645383868877
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger3_link1 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger3_link1.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.996194568606392
+        transformData(1) = -0.0005794349831527972
+        transformData(2) = -0.08715529665043241
+        transformData(3) = -0.01046 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.000581648188867648
+        transformData(5) = 0.999999830842678
+        transformData(6) = -1.3601861946743168e-09
+        transformData(7) = 0.0074615
+        transformData(8) = 0.08715528190826395
+        transformData(9) = -5.0692365436847167e-05
+        transformData(10) = 0.996194737120095
+        transformData(11) = 0.089544
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger3_link2 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger3_link2.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.996194568606392
+        transformData(1) = -0.0005794349831527972
+        transformData(2) = -0.08715529665043241
+        transformData(3) = -0.008616993135667668 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.000581648188867648
+        transformData(5) = 0.999999830842678
+        transformData(6) = -1.3601861946743168e-09
+        transformData(7) = 0.007462779620574764
+        transformData(8) = 0.08715528190826395
+        transformData(9) = -5.0692365436847167e-05
+        transformData(10) = 0.996194737120095
+        transformData(11) = 0.09372052056867856
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger3_link3 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger3_link3.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9961946883100387
+        transformData(1) = -0.0003118471423937344
+        transformData(2) = -0.08715529665043241
+        transformData(3) = -0.017150457065846593 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.00031303821655174487
+        transformData(5) = 0.9999999510035364
+        transformData(6) = -1.3601861946743168e-09
+        transformData(7) = 0.0074600167323490415
+        transformData(8) = 0.08715529238055525
+        transformData(9) = -2.7281583616227376e-05
+        transformData(10) = 0.996194737120095
+        transformData(11) = 0.1367585550233186
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger3_link4 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger3_link4.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9961946883100387
+        transformData(1) = -0.0003118471423937344
+        transformData(2) = -0.08715529665043241
+        transformData(3) = -0.01972153831703435 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.00031303821655174487
+        transformData(5) = 0.9999999510035364
+        transformData(6) = -1.3601861946743168e-09
+        transformData(7) = 0.007460016692223549
+        transformData(8) = 0.08715529238055525
+        transformData(9) = -2.7281583616227376e-05
+        transformData(10) = 0.996194737120095
+        transformData(11) = 0.1661462997683614
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger3_tip_link ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger3_tip_link.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9961946883100387
+        transformData(1) = -0.0003118471423937344
+        transformData(2) = -0.08715529665043241
+        transformData(3) = -0.02309369258510696 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.00031303821655174487
+        transformData(5) = 0.9999999510035364
+        transformData(6) = -1.3601861946743168e-09
+        transformData(7) = 0.007459688247513594
+        transformData(8) = 0.08715529238055525
+        transformData(9) = -2.7281583616227376e-05
+        transformData(10) = 0.996194737120095
+        transformData(11) = 0.1926532646322315
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger4_link1 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger4_link1.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9954148266116883
+        transformData(1) = -0.05443048438432599
+        transformData(2) = -0.07865523079433345
+        transformData(3) = -0.0076649 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.046945674410535376
+        transformData(5) = 0.9944588819049882
+        transformData(6) = -0.09406187247987702
+        transformData(7) = -0.013712
+        transformData(8) = 0.08333922615288807
+        transformData(9) = 0.08993805962977122
+        transformData(10) = 0.9924543913018217
+        transformData(11) = 0.084429
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger4_link2 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger4_link2.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9954148266116883
+        transformData(1) = -0.05443048438432599
+        transformData(2) = -0.07865523079433345
+        transformData(3) = -0.0057896083046316184 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.046945674410535376
+        transformData(5) = 0.9944588819049882
+        transformData(6) = -0.09406187247987702
+        transformData(7) = -0.01398496700621633
+        transformData(8) = 0.08333922615288807
+        transformData(9) = 0.08993805962977122
+        transformData(10) = 0.9924543913018217
+        transformData(11) = 0.08858216386274365
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger4_link3 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger4_link3.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9954294112736704
+        transformData(1) = -0.05416310404734914
+        transformData(2) = -0.07865523079433345
+        transformData(3) = -0.013948612587824373 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.046678551119882616
+        transformData(5) = 0.9944714561066738
+        transformData(6) = -0.09406187247987702
+        transformData(7) = -0.018310749713493647
+        transformData(8) = 0.08331506488446334
+        transformData(9) = 0.08996044213446357
+        transformData(10) = 0.9924543913018217
+        transformData(11) = 0.13147517817832027
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger4_link4 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger4_link4.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9954294112736704
+        transformData(1) = -0.05416310404734914
+        transformData(2) = -0.07865523079433345
+        transformData(3) = -0.01626894189625721 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.046678551119882616
+        transformData(5) = 0.9944714561066738
+        transformData(6) = -0.09406187247987702
+        transformData(7) = -0.02108557495165002
+        transformData(8) = 0.08331506488446334
+        transformData(9) = 0.08996044213446357
+        transformData(10) = 0.9924543913018217
+        transformData(11) = 0.16075258272172402
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger4_tip_link ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger4_tip_link.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9954294112736704
+        transformData(1) = -0.05416310404734914
+        transformData(2) = -0.07865523079433345
+        transformData(3) = -0.019417024642654834 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.046678551119882616
+        transformData(5) = 0.9944714561066738
+        transformData(6) = -0.09406187247987702
+        transformData(7) = -0.023646170125481748
+        transformData(8) = 0.08331506488446334
+        transformData(9) = 0.08996044213446357
+        transformData(10) = 0.9924543913018217
+        transformData(11) = 0.1871634008691723
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger5_link1 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger5_link1.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9833722171113
+        transformData(1) = -0.1715713355255206
+        transformData(2) = -0.05951772374339943
+        transformData(3) = -0.0022687 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.15634602826290203
+        transformData(5) = 0.9665828095066479
+        transformData(6) = -0.2031590308419763
+        transformData(7) = -0.034001
+        transformData(8) = 0.09238507487696385
+        transformData(9) = 0.1904755868667281
+        transformData(10) = 0.9773351772793986
+        transformData(11) = 0.074281
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger5_link2 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger5_link2.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9833722171113
+        transformData(1) = -0.1715713355255206
+        transformData(2) = -0.05951772374339943
+        transformData(3) = -0.00034335201732873773 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.15634602826290203
+        transformData(5) = 0.9665828095066479
+        transformData(6) = -0.2031590308419763
+        transformData(7) = -0.03446967486118952
+        transformData(8) = 0.09238507487696385
+        transformData(9) = 0.1904755868667281
+        transformData(10) = 0.9773351772793986
+        transformData(11) = 0.07839358787384691
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger5_link3 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger5_link3.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9834182674113738
+        transformData(1) = -0.17130718572790857
+        transformData(2) = -0.05951772374339943
+        transformData(3) = -0.007610414122847008 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.15608638881727555
+        transformData(5) = 0.9666247707426762
+        transformData(6) = -0.2031590308419763
+        transformData(7) = -0.044073709102703626
+        transformData(8) = 0.09233390789733774
+        transformData(9) = 0.1905003955498588
+        transformData(10) = 0.9773351772793986
+        transformData(11) = 0.12058416453075413
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger5_link4 ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger5_link4.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9834182674113738
+        transformData(1) = -0.17130718572790857
+        transformData(2) = -0.05951772374339943
+        transformData(3) = -0.00936618697327729 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.15608638881727555
+        transformData(5) = 0.9666247707426762
+        transformData(6) = -0.2031590308419763
+        transformData(7) = -0.05006690051254192
+        transformData(8) = 0.09233390789733774
+        transformData(9) = 0.1905003955498588
+        transformData(10) = 0.9773351772793986
+        transformData(11) = 0.14941555226049638
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+    ' --- Link: right_finger5_tip_link ---
+    ' Import Component
+    Set swComponent = swAssembly.AddComponent("/Users/aaryamanpatel/Documents/wuji-hand-description/meshes/right/right_finger5_tip_link.STL", 0, 0, 0)
+    If Not swComponent Is Nothing Then
+        transformData(0) = 0.9834182674113738
+        transformData(1) = -0.17130718572790857
+        transformData(2) = -0.05951772374339943
+        transformData(3) = -0.011984526061020188 ' Convert mm back to meters for API? No, API usually takes meters.
+        transformData(4) = 0.15608638881727555
+        transformData(5) = 0.9666247707426762
+        transformData(6) = -0.2031590308419763
+        transformData(7) = -0.05564336388487366
+        transformData(8) = 0.09233390789733774
+        transformData(9) = 0.1905003955498588
+        transformData(10) = 0.9773351772793986
+        transformData(11) = 0.17541610367213964
+        transformData(12) = 1.0
+        Set swXform = swMathUtil.CreateTransform(transformData)
+        swComponent.Transform2 = swXform
+        ' Fix the component so it stays in place
+        boolstatus = swComponent.Select4(False, nothing, False)
+        swModel.FixComponent
+    End If
+
+    swModel.ViewZoomtofit2
+End Sub
