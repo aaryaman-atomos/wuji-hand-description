@@ -384,6 +384,9 @@ html = f"""<!DOCTYPE html>
     <h1>🤚 Hand Simulator</h1>
     <p style="font-size:12px;color:#888;margin-bottom:8px;">Drag sliders to move joints in real time.</p>
 
+    <h2>👁️ Finger Visibility</h2>
+    <div class="toggle-section" id="fingerToggles"></div>
+
     <h2>🔄 Workspace Visibility</h2>
     <div class="toggle-section" id="hullToggles"></div>
 
@@ -467,6 +470,7 @@ function transformVerts(verts, T) {{
 // ── State ────────────────────────────────────────────────
 const angles = {{}};
 const hullVisible = {{}};
+const fingerVisible = {{}};
 let meshVisible = true;
 let vectorVisible = true;
 const SHAFT_LEN = 0.013;   // 13 mm shaft
@@ -474,6 +478,7 @@ const HEAD_LEN  = 0.004;   // 4 mm arrowhead cone
 const HEAD_RAD  = 0.0018;  // 1.8 mm arrowhead base radius
 const HEAD_SIDES = 8;      // octagonal cone
 FINGER_ORDER.forEach(f => hullVisible[f] = true);
+FINGER_ORDER.forEach(f => fingerVisible[f] = true);
 FINGER_ORDER.forEach(f => {{
   CHAINS[f].forEach(j => {{ if (j.type==='revolute') angles[j.name]=0; }});
 }});
@@ -816,6 +821,36 @@ FINGER_ORDER.forEach(f => {{
   }});
 
   sliderContainer.appendChild(group);
+}});
+
+// ── Finger visibility toggle buttons ─────────────────────
+const fingerToggleContainer = document.getElementById('fingerToggles');
+['Thumb', 'Thumb 2'].forEach(f => {{
+  const btn = document.createElement('div');
+  btn.className = 'toggle-btn';
+  btn.textContent = f;
+  btn.style.borderColor = COLORS[f];
+  btn.style.color = COLORS[f];
+  btn.style.backgroundColor = COLORS[f] + '18';
+
+  btn.addEventListener('click', () => {{
+    fingerVisible[f] = !fingerVisible[f];
+    btn.classList.toggle('off', !fingerVisible[f]);
+    const vis = fingerVisible[f];
+    const data = document.getElementById('plot').data;
+    const indices = [];
+    data.forEach((tr, idx) => {{
+      if (tr._finger === f && (tr._kind === 'skel' || tr._kind === 'tip'
+          || tr._kind === 'mesh' || tr._kind === 'vector_shaft'
+          || tr._kind === 'vector_head')) {{
+        indices.push(idx);
+      }}
+    }});
+    if (indices.length > 0) {{
+      Plotly.restyle('plot', {{visible: vis}}, indices);
+    }}
+  }});
+  fingerToggleContainer.appendChild(btn);
 }});
 
 // ── Hull toggle buttons ──────────────────────────────────
