@@ -301,6 +301,12 @@ html = f"""<!DOCTYPE html>
            style="border-color:#888;color:#888;background:#8881">Hand Mesh</div>
     </div>
 
+    <h2>➤ Tip Vectors</h2>
+    <div class="toggle-section">
+      <div class="toggle-btn" id="vectorToggle"
+           style="border-color:#555;color:#555;background:#5551">Tip Direction</div>
+    </div>
+
     <h2>🎛️ Joint Controls</h2>
     <div id="sliderContainer"></div>
     <button class="btn" onclick="resetAll()">↺ Reset All Joints</button>
@@ -370,6 +376,8 @@ function transformVerts(verts, T) {{
 const angles = {{}};
 const hullVisible = {{}};
 let meshVisible = true;
+let vectorVisible = true;
+const ARROW_LEN = 0.015;   // 15 mm arrow length
 FINGER_ORDER.forEach(f => hullVisible[f] = true);
 FINGER_ORDER.forEach(f => {{
   CHAINS[f].forEach(j => {{ if (j.type==='revolute') angles[j.name]=0; }});
@@ -387,6 +395,19 @@ function fk(chain) {{
     }}
   }});
   return pts;
+}}
+
+// ── FK — returns tip position + Z-axis direction (for tip vectors) ──
+function fkTipFrame(chain) {{
+  let T = mat4();
+  chain.forEach(j => {{
+    T = mat4Mul(T, j.static_T);
+    if (j.type === 'revolute') {{
+      T = mat4Mul(T, revoluteT(j.axis, angles[j.name] || 0));
+    }}
+  }});
+  // Z-axis of the tip frame = 3rd column of rotation matrix (row-major)
+  return {{ pos: getPos(T), zAxis: [T[2], T[6], T[10]] }};
 }}
 
 // ── FK — returns per-link transforms (for meshes) ────────
@@ -485,6 +506,23 @@ function buildTraces() {{
     }});
   }});
 
+  // 4) Tip direction vectors (Cone traces — normal to flexion axis)
+  FINGER_ORDER.forEach(f => {{
+    const tip = fkTipFrame(CHAINS[f]);
+    traces.push({{
+      type:'cone',
+      x:[tip.pos[0]], y:[tip.pos[1]], z:[tip.pos[2]],
+      u:[tip.zAxis[0]], v:[tip.zAxis[1]], w:[tip.zAxis[2]],
+      sizemode:'absolute', sizeref: ARROW_LEN,
+      anchor:'tail',
+      colorscale:[[0,COLORS[f]],[1,COLORS[f]]],
+      showscale:false,
+      name:f+' tip vector', hoverinfo:'name', showlegend:false,
+      visible: vectorVisible,
+      _finger:f, _kind:'vector',
+    }});
+  }});
+
   return traces;
 }}
 
@@ -517,9 +555,13 @@ function updatePlot() {{
     Object.assign(allLinkT, fkLinkTransforms(CHAINS[f]));
   }});
 
-  // Batch updates
+  // Batch updates for scatter3d / mesh3d (x, y, z only)
   const indices = [];
   const xBatch = [], yBatch = [], zBatch = [];
+
+  // Separate batch for Cone traces (x, y, z + u, v, w)
+  const vecIdx = [], vecX = [], vecY = [], vecZ = [];
+  const vecU = [], vecV = [], vecW = [];
 
   data.forEach((tr, idx) => {{
     if (tr._kind === 'skel') {{
@@ -545,11 +587,24 @@ function updatePlot() {{
       xBatch.push(tv.x);
       yBatch.push(tv.y);
       zBatch.push(tv.z);
+    }} else if (tr._kind === 'vector') {{
+      const tip = fkTipFrame(CHAINS[tr._finger]);
+      vecIdx.push(idx);
+      vecX.push([tip.pos[0]]);
+      vecY.push([tip.pos[1]]);
+      vecZ.push([tip.pos[2]]);
+      vecU.push([tip.zAxis[0]]);
+      vecV.push([tip.zAxis[1]]);
+      vecW.push([tip.zAxis[2]]);
     }}
   }});
 
   if (indices.length > 0) {{
     Plotly.restyle('plot', {{x: xBatch, y: yBatch, z: zBatch}}, indices);
+  }}
+  if (vecIdx.length > 0) {{
+    Plotly.restyle('plot', {{x: vecX, y: vecY, z: vecZ,
+                            u: vecU, v: vecV, w: vecW}}, vecIdx);
   }}
 }}
 
@@ -645,6 +700,21 @@ meshToggleBtn.addEventListener('click', () => {{
   }});
   if (indices.length > 0) {{
     Plotly.restyle('plot', {{visible: meshVisible}}, indices);
+  }}
+}});
+
+// ── Vector toggle button ─────────────────────────────────
+const vectorToggleBtn = document.getElementById('vectorToggle');
+vectorToggleBtn.addEventListener('click', () => {{
+  vectorVisible = !vectorVisible;
+  vectorToggleBtn.classList.toggle('off', !vectorVisible);
+  const data = document.getElementById('plot').data;
+  const indices = [];
+  data.forEach((tr, idx) => {{
+    if (tr._kind === 'vector') indices.push(idx);
+  }});
+  if (indices.length > 0) {{
+    Plotly.restyle('plot', {{visible: vectorVisible}}, indices);
   }}
 }});
 
