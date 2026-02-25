@@ -33,6 +33,25 @@
           background: #555; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
   .btn:hover { background: #333; }
   .info { font-size: 11px; color: #999; margin-top: 12px; line-height: 1.5; }
+  .optimizer { background: #f0faf8; border: 2px solid #1abc9c; border-radius: 8px;
+                padding: 10px; margin-bottom: 12px; }
+  .optimizer h3 { font-size: 13px; color: #1abc9c; margin: 0 0 8px; }
+  .opt-row { display: flex; align-items: center; margin-bottom: 3px; gap: 4px; }
+  .opt-row label { width: 24px; font-size: 11px; font-weight: 700; color: #1abc9c; text-align: right; flex-shrink: 0; }
+  .opt-row input[type=range] { flex: 1; height: 5px; accent-color: #1abc9c; cursor: pointer; }
+  .opt-row .val { width: 62px; font-size: 10px; color: #666; text-align: left; flex-shrink: 0; font-family: monospace; }
+  .coord-box { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin-top: 6px;
+                font-family: monospace; font-size: 10px; line-height: 1.6; color: #444; white-space: pre-wrap; word-break: break-all; }
+  .coord-box b { color: #1abc9c; }
+  .btn-opt { display: block; width: 100%; padding: 7px; margin-top: 6px; border: none; border-radius: 5px;
+              font-size: 11px; font-weight: 600; cursor: pointer; }
+  .btn-hull { background: #1abc9c; color: #fff; }
+  .btn-hull:hover { background: #16a085; }
+  .btn-export { background: #2c3e50; color: #fff; }
+  .btn-export:hover { background: #1a252f; }
+  .macro-box { display:none; background: #1e1e1e; color: #d4d4d4; border-radius: 6px; padding: 10px; margin-top: 6px;
+                font-family: 'Consolas','Courier New',monospace; font-size: 10px; line-height: 1.5;
+                max-height: 200px; overflow-y: auto; white-space: pre; }
 </style>
 </head>
 <body>
@@ -57,6 +76,26 @@
     <div class="toggle-section">
       <div class="toggle-btn" id="vectorToggle"
            style="border-color:#555;color:#555;background:#5551">Tip Direction</div>
+    </div>
+
+    <h2>🔧 Thumb 2 CMC Optimizer</h2>
+    <div class="optimizer">
+      <h3>Position (mm)</h3>
+      <div class="opt-row"><label>X</label><input type="range" id="cmcX" min="-20" max="30" value="5.5" step="0.2"><span class="val" id="cmcXv">5.5</span></div>
+      <div class="opt-row"><label>Y</label><input type="range" id="cmcY" min="-10" max="40" value="27.5" step="0.2"><span class="val" id="cmcYv">27.5</span></div>
+      <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-10" max="50" value="18.5" step="0.2"><span class="val" id="cmcZv">18.5</span></div>
+
+      <h3 style="margin-top:8px;">Axis Direction</h3>
+      <div class="opt-row"><label>Az</label><input type="range" id="cmcAz" min="-180" max="180" value="0" step="1"><span class="val" id="cmcAzv">0°</span></div>
+      <div class="opt-row"><label>El</label><input type="range" id="cmcEl" min="-90" max="90" value="0" step="1"><span class="val" id="cmcElv">0°</span></div>
+
+      <button class="btn-opt btn-hull" onclick="recomputeHull()">⟳ Recompute Workspace Hull</button>
+
+      <h3 style="margin-top:8px;">Coordinates</h3>
+      <div class="coord-box" id="coordReadout">Loading...</div>
+
+      <button class="btn-opt btn-export" onclick="exportSolidworks()">📐 Export to SolidWorks</button>
+      <div class="macro-box" id="macroBox"></div>
     </div>
 
     <h2>🎛️ Joint Controls</h2>
@@ -139,6 +178,131 @@ FINGER_ORDER.forEach(f => fingerVisible[f] = true);
 FINGER_ORDER.forEach(f => {
   CHAINS[f].forEach(j => { if (j.type==='revolute') angles[j.name]=0; });
 });
+
+// ── CMC Optimizer state ──────────────────────────────────
+// Old thumb's rotation matrix (row-major 3×3 flattened) — used as basis
+const OLD_R = [0.6938766148580272, 0.42293651306183244, 0.5828035254459802, -0.6218376049046364, -0.05619145108013544, 0.7811277193596281, 0.36311600967133106, -0.9044154060743365, 0.22400789444964353];
+// Initial axis direction for Thumb 2
+const INIT_CMC_AXIS = [0.9373319913952572, -0.17230625525086907, -0.3028519313268839];
+const INIT_CMC_POS  = [5.54, 27.459999999999997, 18.54];  // mm
+
+// Current CMC optimizer values
+const cmcState = {
+  x: INIT_CMC_POS[0], y: INIT_CMC_POS[1], z: INIT_CMC_POS[2],  // mm
+  az: 0, el: 0,  // degrees (azimuth, elevation offsets)
+};
+
+// Compute initial azimuth/elevation from INIT_CMC_AXIS so readout is correct at start
+(function() {
+  const a = INIT_CMC_AXIS;
+  cmcState.az = Math.atan2(a[1], a[0]) * RAD2DEG;
+  cmcState.el = Math.asin(Math.max(-1, Math.min(1, a[2]))) * RAD2DEG;
+  // Update slider initial values
+  document.addEventListener('DOMContentLoaded', () => {
+    const azEl = document.getElementById('cmcAz');
+    const elEl = document.getElementById('cmcEl');
+    if (azEl) { azEl.value = cmcState.az.toFixed(0); document.getElementById('cmcAzv').textContent = cmcState.az.toFixed(0) + '°'; }
+    if (elEl) { elEl.value = cmcState.el.toFixed(0); document.getElementById('cmcElv').textContent = cmcState.el.toFixed(0) + '°'; }
+  });
+})();
+
+// Build a rotation matrix (row-major 3×3) whose Y-axis = given axis direction
+function buildCmcRotation(axisDir) {
+  // Normalize
+  let [ax,ay,az] = axisDir;
+  const n = Math.sqrt(ax*ax+ay*ay+az*az);
+  ax/=n; ay/=n; az/=n;
+
+  // Use Rodrigues to rotate OLD_R so its Y-col aligns with new axis
+  // Old Y-axis = column 1 of OLD_R
+  const oy = [OLD_R[1], OLD_R[4], OLD_R[7]];
+
+  // v = oy × axis
+  const vx = oy[1]*az - oy[2]*ay;
+  const vy = oy[2]*ax - oy[0]*az;
+  const vz = oy[0]*ay - oy[1]*ax;
+  const s = Math.sqrt(vx*vx+vy*vy+vz*vz);
+  const c = oy[0]*ax + oy[1]*ay + oy[2]*az;
+
+  let R;
+  if (s > 1e-10) {
+    const vnx=vx/s, vny=vy/s, vnz=vz/s;
+    // Skew matrix K
+    const K = [0,-vnz,vny, vnz,0,-vnx, -vny,vnx,0];
+    // K²
+    const K2 = [
+      K[0]*K[0]+K[1]*K[3]+K[2]*K[6], K[0]*K[1]+K[1]*K[4]+K[2]*K[7], K[0]*K[2]+K[1]*K[5]+K[2]*K[8],
+      K[3]*K[0]+K[4]*K[3]+K[5]*K[6], K[3]*K[1]+K[4]*K[4]+K[5]*K[7], K[3]*K[2]+K[4]*K[5]+K[5]*K[8],
+      K[6]*K[0]+K[7]*K[3]+K[8]*K[6], K[6]*K[1]+K[7]*K[4]+K[8]*K[7], K[6]*K[2]+K[7]*K[5]+K[8]*K[8],
+    ];
+    // R_align = I + K*s + K²*(1-c)
+    const Ra = new Array(9);
+    for (let i=0;i<9;i++) Ra[i] = (i%4===0?1:0) + K[i]*s + K2[i]*(1-c);
+    // R_new = R_align × OLD_R  (3×3 multiply)
+    R = new Array(9);
+    for (let r=0;r<3;r++) for (let cc=0;cc<3;cc++) {
+      let sum=0; for (let k=0;k<3;k++) sum += Ra[r*3+k]*OLD_R[k*3+cc]; R[r*3+cc]=sum;
+    }
+  } else {
+    R = c > 0 ? OLD_R.slice() : OLD_R.map(v=>-v);
+  }
+  return R;
+}
+
+// Build flat 16-element row-major 4×4 from 3×3 rotation + position (mm → m)
+function buildCmcStaticT() {
+  const az_rad = cmcState.az * DEG2RAD;
+  const el_rad = cmcState.el * DEG2RAD;
+  // Axis direction from azimuth + elevation (spherical → Cartesian)
+  const axDir = [
+    Math.cos(el_rad) * Math.cos(az_rad),
+    Math.cos(el_rad) * Math.sin(az_rad),
+    Math.sin(el_rad)
+  ];
+  const R = buildCmcRotation(axDir);
+  const px = cmcState.x / 1000, py = cmcState.y / 1000, pz = cmcState.z / 1000;
+  return [
+    R[0],R[1],R[2], px,
+    R[3],R[4],R[5], py,
+    R[6],R[7],R[8], pz,
+    0,0,0,1
+  ];
+}
+
+// Get current axis direction
+function getCmcAxis() {
+  const az_rad = cmcState.az * DEG2RAD;
+  const el_rad = cmcState.el * DEG2RAD;
+  return [
+    Math.cos(el_rad) * Math.cos(az_rad),
+    Math.cos(el_rad) * Math.sin(az_rad),
+    Math.sin(el_rad)
+  ];
+}
+
+// Update Thumb 2's first joint static_T and refresh plot
+function updateCMC() {
+  CHAINS['Thumb 2'][0].static_T = buildCmcStaticT();
+  updatePlot();
+  updateCoordReadout();
+}
+
+// Update the coordinate readout panel
+function updateCoordReadout() {
+  const px = cmcState.x, py = cmcState.y, pz = cmcState.z;
+  const ax = getCmcAxis();
+  // URDF→Sketch mapping: sketch(x,y,z) = urdf(y,z,x)
+  const sx = py, sy = pz, sz = px;
+  const sax = ax[1], say = ax[2], saz = ax[0];
+  const el = document.getElementById('coordReadout');
+  el.innerHTML =
+    '<b>URDF (mm):</b>\n' +
+    '  pos = (' + px.toFixed(2) + ', ' + py.toFixed(2) + ', ' + pz.toFixed(2) + ')\n' +
+    '  axis = (' + ax[0].toFixed(4) + ', ' + ax[1].toFixed(4) + ', ' + ax[2].toFixed(4) + ')\n' +
+    '<b>SolidWorks sketch (mm):</b>\n' +
+    '  pos = (' + sx.toFixed(2) + ', ' + sy.toFixed(2) + ', ' + sz.toFixed(2) + ')\n' +
+    '  axis = (' + sax.toFixed(4) + ', ' + say.toFixed(4) + ', ' + saz.toFixed(4) + ')';
+}
 
 // ── FK — returns joint positions (for skeleton) ──────────
 function fk(chain) {
@@ -561,6 +725,355 @@ vectorToggleBtn.addEventListener('click', () => {
   if (indices.length > 0) {
     Plotly.restyle('plot', {visible: vectorVisible}, indices);
   }
+});
+
+// ── Client-side 3D Convex Hull (Quickhull) ───────────────
+// Minimal incremental convex hull for the CMC optimizer
+function convexHull3D(points) {
+  // points: array of [x,y,z]
+  const N = points.length;
+  if (N < 4) return { vertices: points, faces_i:[], faces_j:[], faces_k:[] };
+
+  // Find 4 non-coplanar seed points
+  let p0=0, p1=-1, p2=-1, p3=-1;
+  let maxDist = 0;
+  for (let i=1;i<N;i++) {
+    const d = dist3(points[0], points[i]);
+    if (d > maxDist) { maxDist=d; p1=i; }
+  }
+  if (p1<0) return { vertices: points, faces_i:[], faces_j:[], faces_k:[] };
+
+  maxDist = 0;
+  for (let i=0;i<N;i++) {
+    if (i===p0||i===p1) continue;
+    const d = distToLine(points[i], points[p0], points[p1]);
+    if (d > maxDist) { maxDist=d; p2=i; }
+  }
+  if (p2<0) return { vertices: points, faces_i:[], faces_j:[], faces_k:[] };
+
+  const n012 = triNormal(points[p0], points[p1], points[p2]);
+  maxDist = 0;
+  for (let i=0;i<N;i++) {
+    if (i===p0||i===p1||i===p2) continue;
+    const d = Math.abs(dot3(sub3(points[i], points[p0]), n012));
+    if (d > maxDist) { maxDist=d; p3=i; }
+  }
+  if (p3<0) return { vertices: points, faces_i:[], faces_j:[], faces_k:[] };
+
+  // Orient initial tetrahedron so all faces point outward
+  if (dot3(sub3(points[p3], points[p0]), n012) > 0) {
+    [p1, p2] = [p2, p1];
+  }
+
+  let faces = [
+    [p0,p1,p2], [p0,p2,p3], [p0,p3,p1], [p1,p3,p2]
+  ];
+
+  const assigned = new Array(N).fill(-1);
+  assigned[p0]=assigned[p1]=assigned[p2]=assigned[p3]=-2;
+
+  function faceNormal(f) {
+    return triNormal(points[f[0]], points[f[1]], points[f[2]]);
+  }
+
+  // Assign points to faces
+  for (let i=0;i<N;i++) {
+    if (assigned[i]===-2) continue;
+    for (let fi=0;fi<faces.length;fi++) {
+      const fn = faceNormal(faces[fi]);
+      const d = dot3(sub3(points[i], points[faces[fi][0]]), fn);
+      if (d > 1e-10) { assigned[i]=fi; break; }
+    }
+  }
+
+  // Iterate: for each face, find farthest point and expand
+  let changed = true;
+  let maxIter = N * 2;
+  while (changed && maxIter-- > 0) {
+    changed = false;
+    for (let fi=0;fi<faces.length;fi++) {
+      if (!faces[fi]) continue;
+      const fn = faceNormal(faces[fi]);
+      let best=-1, bestDist=0;
+      for (let i=0;i<N;i++) {
+        if (assigned[i]!==fi) continue;
+        const d = dot3(sub3(points[i], points[faces[fi][0]]), fn);
+        if (d > bestDist) { bestDist=d; best=i; }
+      }
+      if (best < 0) continue;
+      changed = true;
+
+      // Find all visible faces from this point
+      const visible = new Set();
+      const stack = [fi];
+      while (stack.length) {
+        const cf = stack.pop();
+        if (visible.has(cf) || !faces[cf]) continue;
+        const cfn = faceNormal(faces[cf]);
+        if (dot3(sub3(points[best], points[faces[cf][0]]), cfn) > 1e-10) {
+          visible.add(cf);
+          // Find adjacent faces
+          for (let fj=0;fj<faces.length;fj++) {
+            if (!faces[fj] || visible.has(fj)) continue;
+            if (sharesEdge(faces[cf], faces[fj])) stack.push(fj);
+          }
+        }
+      }
+
+      // Collect horizon edges
+      const horizon = [];
+      visible.forEach(vf => {
+        const f = faces[vf];
+        for (let e=0;e<3;e++) {
+          const a=f[e], b=f[(e+1)%3];
+          let shared = false;
+          visible.forEach(vf2 => {
+            if (vf2===vf) return;
+            const f2 = faces[vf2];
+            for (let e2=0;e2<3;e2++) {
+              if (f2[e2]===b && f2[(e2+1)%3]===a) shared = true;
+            }
+          });
+          if (!shared) horizon.push([a,b]);
+        }
+      });
+
+      // Remove visible faces
+      const removedPts = [];
+      for (let i=0;i<N;i++) {
+        if (visible.has(assigned[i])) { removedPts.push(i); assigned[i]=-1; }
+      }
+      visible.forEach(vf => { faces[vf] = null; });
+
+      // Create new faces
+      const newFaces = [];
+      horizon.forEach(([a,b]) => {
+        const nfi = faces.length;
+        faces.push([a, best, b]);
+        newFaces.push(nfi);
+      });
+      assigned[best] = -2;
+
+      // Reassign removed points
+      removedPts.forEach(i => {
+        if (assigned[i]===-2) return;
+        for (const nfi of newFaces) {
+          const fn2 = faceNormal(faces[nfi]);
+          const d = dot3(sub3(points[i], points[faces[nfi][0]]), fn2);
+          if (d > 1e-10) { assigned[i]=nfi; break; }
+        }
+      });
+    }
+  }
+
+  // Collect valid faces
+  const fi=[],fj=[],fk=[];
+  faces.forEach(f => {
+    if (!f) return;
+    fi.push(f[0]); fj.push(f[1]); fk.push(f[2]);
+  });
+  return { vertices: points, faces_i: fi, faces_j: fj, faces_k: fk };
+}
+
+function dist3(a,b) { return Math.sqrt((a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2); }
+function sub3(a,b) { return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }
+function dot3(a,b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+function cross3(a,b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function triNormal(a,b,c) {
+  const n = cross3(sub3(b,a), sub3(c,a));
+  const len = Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);
+  return len>1e-15 ? [n[0]/len,n[1]/len,n[2]/len] : [0,0,1];
+}
+function distToLine(p, a, b) {
+  const ab = sub3(b,a), ap = sub3(p,a);
+  const cr = cross3(ab,ap);
+  return Math.sqrt(cr[0]*cr[0]+cr[1]*cr[1]+cr[2]*cr[2]) / Math.sqrt(ab[0]*ab[0]+ab[1]*ab[1]+ab[2]*ab[2]+1e-30);
+}
+function sharesEdge(f1,f2) {
+  let shared=0;
+  for (let i=0;i<3;i++) for (let j=0;j<3;j++) if (f1[i]===f2[j]) shared++;
+  return shared>=2;
+}
+
+// ── Recompute Thumb 2 hull ───────────────────────────────
+const HULL_SAMPLES = 7;
+
+function recomputeHull() {
+  const statusBtn = document.querySelector('.btn-hull');
+  statusBtn.textContent = '⏳ Computing...';
+
+  // Use setTimeout to let the UI update before heavy computation
+  setTimeout(() => {
+    const chain = CHAINS['Thumb 2'];
+    const revJoints = chain.filter(j => j.type==='revolute');
+    const ranges = revJoints.map(j => {
+      const arr = [];
+      for (let s=0; s<HULL_SAMPLES; s++) arr.push(j.lower + (j.upper-j.lower)*s/(HULL_SAMPLES-1));
+      return arr;
+    });
+
+    // Generate all combos (product of ranges)
+    const tips = [];
+    const nRev = ranges.length;
+    const indices = new Array(nRev).fill(0);
+    const total = ranges.reduce((a,r) => a*r.length, 1);
+    for (let c=0; c<total; c++) {
+      // FK for this combo
+      let T = mat4();
+      let ri = 0;
+      for (let i=0; i<chain.length; i++) {
+        T = mat4Mul(T, chain[i].static_T);
+        if (chain[i].type === 'revolute') {
+          T = mat4Mul(T, revoluteT(chain[i].axis, ranges[ri][indices[ri]]));
+          ri++;
+        }
+      }
+      tips.push([T[3], T[7], T[11]]);
+
+      // Increment indices (odometer)
+      for (let d=nRev-1; d>=0; d--) {
+        indices[d]++;
+        if (indices[d] < ranges[d].length) break;
+        indices[d] = 0;
+      }
+    }
+
+    // Compute hull
+    const hull = convexHull3D(tips);
+
+    // Update HULLS data
+    HULLS['Thumb 2'] = hull;
+
+    // Update the hull trace in the plot
+    const plotData = document.getElementById('plot').data;
+    for (let idx = 0; idx < plotData.length; idx++) {
+      if (plotData[idx]._kind === 'hull' && plotData[idx]._finger === 'Thumb 2') {
+        const vx = hull.vertices.map(v=>v[0]);
+        const vy = hull.vertices.map(v=>v[1]);
+        const vz = hull.vertices.map(v=>v[2]);
+        Plotly.restyle('plot', {
+          x: [vx], y: [vy], z: [vz],
+          i: [hull.faces_i], j: [hull.faces_j], k: [hull.faces_k],
+          visible: hullVisible['Thumb 2']
+        }, [idx]);
+        break;
+      }
+    }
+
+    // Also update BBOX
+    let allPts = [];
+    Object.values(HULLS).forEach(h => { if (h.vertices) allPts = allPts.concat(h.vertices); });
+    if (allPts.length > 0) {
+      const xs = allPts.map(p=>p[0]), ys = allPts.map(p=>p[1]), zs = allPts.map(p=>p[2]);
+      const pad = 0.02;
+      BBOX.x = [Math.min(...xs)-pad, Math.max(...xs)+pad];
+      BBOX.y = [Math.min(...ys)-pad, Math.max(...ys)+pad];
+      BBOX.z = [Math.min(...zs)-pad, Math.max(...zs)+pad];
+      Plotly.relayout('plot', {
+        'scene.xaxis.range': BBOX.x,
+        'scene.yaxis.range': BBOX.y,
+        'scene.zaxis.range': BBOX.z,
+      });
+    }
+
+    statusBtn.textContent = '⟳ Recompute Workspace Hull';
+  }, 50);
+}
+
+// ── Export to SolidWorks ──────────────────────────────────
+function exportSolidworks() {
+  const px = cmcState.x, py = cmcState.y, pz = cmcState.z;
+  const ax = getCmcAxis();
+  // URDF→Sketch mapping: sketch(x,y,z) = urdf(y,z,x)
+  const sx = py.toFixed(3), sy = pz.toFixed(3), sz = px.toFixed(3);
+  const sax = ax[1].toFixed(6), say = ax[2].toFixed(6), saz = ax[0].toFixed(6);
+  // Axis point = origin + 10mm * axis direction (in sketch coords)
+  const apx = (py + ax[1]*10).toFixed(3), apy = (pz + ax[2]*10).toFixed(3), apz = (px + ax[0]*10).toFixed(3);
+
+  const macro = `' SolidWorks VBA Macro — CMC Joint Position & Axis
+' Generated by Interactive Hand Simulator
+' ================================================
+' CMC Origin (sketch mm): (${sx}, ${sy}, ${sz})
+' Axis Direction (sketch): (${sax}, ${say}, ${saz})
+' ================================================
+
+Sub InsertCMCAxis()
+    Dim swApp As SldWorks.SldWorks
+    Dim swModel As SldWorks.ModelDoc2
+    Dim swSketchMgr As SldWorks.SketchManager
+
+    Set swApp = Application.SldWorks
+    Set swModel = swApp.ActiveDoc
+
+    If swModel Is Nothing Then
+        MsgBox "No active document. Please open a part."
+        Exit Sub
+    End If
+
+    ' ── Create 3D sketch with CMC origin point and axis line ──
+    swModel.Insert3DSketch2 True
+    Set swSketchMgr = swModel.SketchManager
+
+    ' Origin point (convert mm to meters for API)
+    Dim ox As Double, oy As Double, oz As Double
+    ox = ${sx} / 1000#
+    oy = ${sy} / 1000#
+    oz = ${sz} / 1000#
+
+    ' Axis endpoint (10mm along axis direction)
+    Dim ax As Double, ay As Double, az As Double
+    ax = ${apx} / 1000#
+    ay = ${apy} / 1000#
+    az = ${apz} / 1000#
+
+    ' Draw axis line
+    swSketchMgr.CreateLine ox, oy, oz, ax, ay, az
+
+    ' Add a point at the origin
+    swSketchMgr.CreatePoint ox, oy, oz
+
+    ' Make line a construction line
+    swModel.SetConstructionGeometry True
+
+    swModel.Insert3DSketch2 True
+    swModel.ClearSelection2 True
+
+    MsgBox "CMC axis inserted!" & vbCrLf & _
+           "Origin: (" & ${sx} & ", " & ${sy} & ", " & ${sz} & ") mm" & vbCrLf & _
+           "Axis dir: (" & ${sax} & ", " & ${say} & ", " & ${saz} & ")"
+End Sub`;
+
+  const box = document.getElementById('macroBox');
+  box.textContent = macro;
+  box.style.display = box.style.display === 'block' ? 'none' : 'block';
+
+  // Also copy to clipboard
+  navigator.clipboard.writeText(macro).then(() => {
+    const btn = document.querySelector('.btn-export');
+    const orig = btn.textContent;
+    btn.textContent = '✅ Copied to clipboard!';
+    setTimeout(() => btn.textContent = orig, 2000);
+  }).catch(() => {});
+}
+
+// ── CMC Optimizer slider listeners ───────────────────────
+['cmcX','cmcY','cmcZ','cmcAz','cmcEl'].forEach(id => {
+  const el = document.getElementById(id);
+  const valEl = document.getElementById(id + 'v');
+  el.addEventListener('input', () => {
+    const v = parseFloat(el.value);
+    if (id==='cmcX') { cmcState.x=v; valEl.textContent=v.toFixed(1); }
+    else if (id==='cmcY') { cmcState.y=v; valEl.textContent=v.toFixed(1); }
+    else if (id==='cmcZ') { cmcState.z=v; valEl.textContent=v.toFixed(1); }
+    else if (id==='cmcAz') { cmcState.az=v; valEl.textContent=v.toFixed(0)+'°'; }
+    else if (id==='cmcEl') { cmcState.el=v; valEl.textContent=v.toFixed(0)+'°'; }
+    updateCMC();
+  });
+});
+
+// Init coordinate readout on load
+document.addEventListener('DOMContentLoaded', () => {
+  updateCoordReadout();
 });
 
 // ── Reset ────────────────────────────────────────────────
