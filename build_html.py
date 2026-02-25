@@ -388,8 +388,6 @@ html = f"""<!DOCTYPE html>
   .coord-box b {{ color: #1abc9c; }}
   .btn-opt {{ display: block; width: 100%; padding: 7px; margin-top: 6px; border: none; border-radius: 5px;
               font-size: 11px; font-weight: 600; cursor: pointer; }}
-  .btn-hull {{ background: #1abc9c; color: #fff; }}
-  .btn-hull:hover {{ background: #16a085; }}
   .btn-export {{ background: #2c3e50; color: #fff; }}
   .btn-export:hover {{ background: #1a252f; }}
   .macro-box {{ display:none; background: #1e1e1e; color: #d4d4d4; border-radius: 6px; padding: 10px; margin-top: 6px;
@@ -431,8 +429,6 @@ html = f"""<!DOCTYPE html>
       <h3 style="margin-top:8px;">Axis Direction</h3>
       <div class="opt-row"><label>Az</label><input type="range" id="cmcAz" min="-180" max="180" value="0" step="1"><span class="val" id="cmcAzv">0°</span></div>
       <div class="opt-row"><label>El</label><input type="range" id="cmcEl" min="-90" max="90" value="0" step="1"><span class="val" id="cmcElv">0°</span></div>
-
-      <button class="btn-opt btn-hull" onclick="recomputeHull()">⟳ Recompute Workspace Hull</button>
 
       <h3 style="margin-top:8px;">Coordinates</h3>
       <div class="coord-box" id="coordReadout">Loading...</div>
@@ -623,10 +619,11 @@ function getCmcAxis() {{
   ];
 }}
 
-// Update Thumb 2's first joint static_T and refresh plot
+// Update Thumb 2's first joint static_T, hull, and refresh plot
 function updateCMC() {{
   CHAINS['Thumb 2'][0].static_T = buildCmcStaticT();
   updatePlot();
+  transformT2Hull();
   updateCoordReadout();
 }}
 
@@ -1070,257 +1067,55 @@ vectorToggleBtn.addEventListener('click', () => {{
   }}
 }});
 
-// ── Client-side 3D Convex Hull (Quickhull) ───────────────
-// Minimal incremental convex hull for the CMC optimizer
-function convexHull3D(points) {{
-  // points: array of [x,y,z]
-  const N = points.length;
-  if (N < 4) return {{ vertices: points, faces_i:[], faces_j:[], faces_k:[] }};
-
-  // Find 4 non-coplanar seed points
-  let p0=0, p1=-1, p2=-1, p3=-1;
-  let maxDist = 0;
-  for (let i=1;i<N;i++) {{
-    const d = dist3(points[0], points[i]);
-    if (d > maxDist) {{ maxDist=d; p1=i; }}
-  }}
-  if (p1<0) return {{ vertices: points, faces_i:[], faces_j:[], faces_k:[] }};
-
-  maxDist = 0;
-  for (let i=0;i<N;i++) {{
-    if (i===p0||i===p1) continue;
-    const d = distToLine(points[i], points[p0], points[p1]);
-    if (d > maxDist) {{ maxDist=d; p2=i; }}
-  }}
-  if (p2<0) return {{ vertices: points, faces_i:[], faces_j:[], faces_k:[] }};
-
-  const n012 = triNormal(points[p0], points[p1], points[p2]);
-  maxDist = 0;
-  for (let i=0;i<N;i++) {{
-    if (i===p0||i===p1||i===p2) continue;
-    const d = Math.abs(dot3(sub3(points[i], points[p0]), n012));
-    if (d > maxDist) {{ maxDist=d; p3=i; }}
-  }}
-  if (p3<0) return {{ vertices: points, faces_i:[], faces_j:[], faces_k:[] }};
-
-  // Orient initial tetrahedron so all faces point outward
-  if (dot3(sub3(points[p3], points[p0]), n012) > 0) {{
-    [p1, p2] = [p2, p1];
-  }}
-
-  let faces = [
-    [p0,p1,p2], [p0,p2,p3], [p0,p3,p1], [p1,p3,p2]
+// ── Rigid-body 4×4 inverse (for SE(3) transforms) ────────
+function mat4RigidInv(m) {{
+  // For rigid body: R^T and -R^T * t
+  const R00=m[0],R01=m[1],R02=m[2],tx=m[3];
+  const R10=m[4],R11=m[5],R12=m[6],ty=m[7];
+  const R20=m[8],R21=m[9],R22=m[10],tz=m[11];
+  return [
+    R00,R10,R20, -(R00*tx+R10*ty+R20*tz),
+    R01,R11,R21, -(R01*tx+R11*ty+R21*tz),
+    R02,R12,R22, -(R02*tx+R12*ty+R22*tz),
+    0,0,0,1
   ];
+}}
 
-  const assigned = new Array(N).fill(-1);
-  assigned[p0]=assigned[p1]=assigned[p2]=assigned[p3]=-2;
+// ── Transform Thumb 2 hull (move with CMC, no recomputation) ──
+// Store original hull vertices and original first-joint transform
+const ORIG_T2_HULL_VERTS = HULLS['Thumb 2'] ? HULLS['Thumb 2'].vertices.map(v => v.slice()) : [];
+const ORIG_T2_STATIC_T   = CHAINS['Thumb 2'][0].static_T.slice();
 
-  function faceNormal(f) {{
-    return triNormal(points[f[0]], points[f[1]], points[f[2]]);
+function transformT2Hull() {{
+  if (!HULLS['Thumb 2'] || ORIG_T2_HULL_VERTS.length === 0) return;
+
+  // delta = T_new * inv(T_original)
+  const T_new = buildCmcStaticT();
+  const T_orig_inv = mat4RigidInv(ORIG_T2_STATIC_T);
+  const T_delta = mat4Mul(T_new, T_orig_inv);
+
+  // Apply delta to every original hull vertex
+  const hull = HULLS['Thumb 2'];
+  const N = ORIG_T2_HULL_VERTS.length;
+  const vx = new Array(N), vy = new Array(N), vz = new Array(N);
+  for (let i = 0; i < N; i++) {{
+    const [ox,oy,oz] = ORIG_T2_HULL_VERTS[i];
+    vx[i] = T_delta[0]*ox + T_delta[1]*oy + T_delta[2]*oz  + T_delta[3];
+    vy[i] = T_delta[4]*ox + T_delta[5]*oy + T_delta[6]*oz  + T_delta[7];
+    vz[i] = T_delta[8]*ox + T_delta[9]*oy + T_delta[10]*oz + T_delta[11];
   }}
 
-  // Assign points to faces
-  for (let i=0;i<N;i++) {{
-    if (assigned[i]===-2) continue;
-    for (let fi=0;fi<faces.length;fi++) {{
-      const fn = faceNormal(faces[fi]);
-      const d = dot3(sub3(points[i], points[faces[fi][0]]), fn);
-      if (d > 1e-10) {{ assigned[i]=fi; break; }}
+  // Update the hull trace in the plot
+  const plotData = document.getElementById('plot').data;
+  for (let idx = 0; idx < plotData.length; idx++) {{
+    if (plotData[idx]._kind === 'hull' && plotData[idx]._finger === 'Thumb 2') {{
+      Plotly.restyle('plot', {{
+        x: [vx], y: [vy], z: [vz],
+        visible: hullVisible['Thumb 2'] && fingerVisible['Thumb 2']
+      }}, [idx]);
+      break;
     }}
   }}
-
-  // Iterate: for each face, find farthest point and expand
-  let changed = true;
-  let maxIter = N * 2;
-  while (changed && maxIter-- > 0) {{
-    changed = false;
-    for (let fi=0;fi<faces.length;fi++) {{
-      if (!faces[fi]) continue;
-      const fn = faceNormal(faces[fi]);
-      let best=-1, bestDist=0;
-      for (let i=0;i<N;i++) {{
-        if (assigned[i]!==fi) continue;
-        const d = dot3(sub3(points[i], points[faces[fi][0]]), fn);
-        if (d > bestDist) {{ bestDist=d; best=i; }}
-      }}
-      if (best < 0) continue;
-      changed = true;
-
-      // Find all visible faces from this point
-      const visible = new Set();
-      const stack = [fi];
-      while (stack.length) {{
-        const cf = stack.pop();
-        if (visible.has(cf) || !faces[cf]) continue;
-        const cfn = faceNormal(faces[cf]);
-        if (dot3(sub3(points[best], points[faces[cf][0]]), cfn) > 1e-10) {{
-          visible.add(cf);
-          // Find adjacent faces
-          for (let fj=0;fj<faces.length;fj++) {{
-            if (!faces[fj] || visible.has(fj)) continue;
-            if (sharesEdge(faces[cf], faces[fj])) stack.push(fj);
-          }}
-        }}
-      }}
-
-      // Collect horizon edges
-      const horizon = [];
-      visible.forEach(vf => {{
-        const f = faces[vf];
-        for (let e=0;e<3;e++) {{
-          const a=f[e], b=f[(e+1)%3];
-          let shared = false;
-          visible.forEach(vf2 => {{
-            if (vf2===vf) return;
-            const f2 = faces[vf2];
-            for (let e2=0;e2<3;e2++) {{
-              if (f2[e2]===b && f2[(e2+1)%3]===a) shared = true;
-            }}
-          }});
-          if (!shared) horizon.push([a,b]);
-        }}
-      }});
-
-      // Remove visible faces
-      const removedPts = [];
-      for (let i=0;i<N;i++) {{
-        if (visible.has(assigned[i])) {{ removedPts.push(i); assigned[i]=-1; }}
-      }}
-      visible.forEach(vf => {{ faces[vf] = null; }});
-
-      // Create new faces
-      const newFaces = [];
-      horizon.forEach(([a,b]) => {{
-        const nfi = faces.length;
-        faces.push([a, best, b]);
-        newFaces.push(nfi);
-      }});
-      assigned[best] = -2;
-
-      // Reassign removed points
-      removedPts.forEach(i => {{
-        if (assigned[i]===-2) return;
-        for (const nfi of newFaces) {{
-          const fn2 = faceNormal(faces[nfi]);
-          const d = dot3(sub3(points[i], points[faces[nfi][0]]), fn2);
-          if (d > 1e-10) {{ assigned[i]=nfi; break; }}
-        }}
-      }});
-    }}
-  }}
-
-  // Collect valid faces
-  const fi=[],fj=[],fk=[];
-  faces.forEach(f => {{
-    if (!f) return;
-    fi.push(f[0]); fj.push(f[1]); fk.push(f[2]);
-  }});
-  return {{ vertices: points, faces_i: fi, faces_j: fj, faces_k: fk }};
-}}
-
-function dist3(a,b) {{ return Math.sqrt((a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2); }}
-function sub3(a,b) {{ return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }}
-function dot3(a,b) {{ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }}
-function cross3(a,b) {{ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }}
-function triNormal(a,b,c) {{
-  const n = cross3(sub3(b,a), sub3(c,a));
-  const len = Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);
-  return len>1e-15 ? [n[0]/len,n[1]/len,n[2]/len] : [0,0,1];
-}}
-function distToLine(p, a, b) {{
-  const ab = sub3(b,a), ap = sub3(p,a);
-  const cr = cross3(ab,ap);
-  return Math.sqrt(cr[0]*cr[0]+cr[1]*cr[1]+cr[2]*cr[2]) / Math.sqrt(ab[0]*ab[0]+ab[1]*ab[1]+ab[2]*ab[2]+1e-30);
-}}
-function sharesEdge(f1,f2) {{
-  let shared=0;
-  for (let i=0;i<3;i++) for (let j=0;j<3;j++) if (f1[i]===f2[j]) shared++;
-  return shared>=2;
-}}
-
-// ── Recompute Thumb 2 hull ───────────────────────────────
-const HULL_SAMPLES = {HULL_SAMPLES};
-
-function recomputeHull() {{
-  const statusBtn = document.querySelector('.btn-hull');
-  statusBtn.textContent = '⏳ Computing...';
-
-  // Use setTimeout to let the UI update before heavy computation
-  setTimeout(() => {{
-    const chain = CHAINS['Thumb 2'];
-    const revJoints = chain.filter(j => j.type==='revolute');
-    const ranges = revJoints.map(j => {{
-      const arr = [];
-      for (let s=0; s<HULL_SAMPLES; s++) arr.push(j.lower + (j.upper-j.lower)*s/(HULL_SAMPLES-1));
-      return arr;
-    }});
-
-    // Generate all combos (product of ranges)
-    const tips = [];
-    const nRev = ranges.length;
-    const indices = new Array(nRev).fill(0);
-    const total = ranges.reduce((a,r) => a*r.length, 1);
-    for (let c=0; c<total; c++) {{
-      // FK for this combo
-      let T = mat4();
-      let ri = 0;
-      for (let i=0; i<chain.length; i++) {{
-        T = mat4Mul(T, chain[i].static_T);
-        if (chain[i].type === 'revolute') {{
-          T = mat4Mul(T, revoluteT(chain[i].axis, ranges[ri][indices[ri]]));
-          ri++;
-        }}
-      }}
-      tips.push([T[3], T[7], T[11]]);
-
-      // Increment indices (odometer)
-      for (let d=nRev-1; d>=0; d--) {{
-        indices[d]++;
-        if (indices[d] < ranges[d].length) break;
-        indices[d] = 0;
-      }}
-    }}
-
-    // Compute hull
-    const hull = convexHull3D(tips);
-
-    // Update HULLS data
-    HULLS['Thumb 2'] = hull;
-
-    // Update the hull trace in the plot
-    const plotData = document.getElementById('plot').data;
-    for (let idx = 0; idx < plotData.length; idx++) {{
-      if (plotData[idx]._kind === 'hull' && plotData[idx]._finger === 'Thumb 2') {{
-        const vx = hull.vertices.map(v=>v[0]);
-        const vy = hull.vertices.map(v=>v[1]);
-        const vz = hull.vertices.map(v=>v[2]);
-        Plotly.restyle('plot', {{
-          x: [vx], y: [vy], z: [vz],
-          i: [hull.faces_i], j: [hull.faces_j], k: [hull.faces_k],
-          visible: hullVisible['Thumb 2']
-        }}, [idx]);
-        break;
-      }}
-    }}
-
-    // Also update BBOX
-    let allPts = [];
-    Object.values(HULLS).forEach(h => {{ if (h.vertices) allPts = allPts.concat(h.vertices); }});
-    if (allPts.length > 0) {{
-      const xs = allPts.map(p=>p[0]), ys = allPts.map(p=>p[1]), zs = allPts.map(p=>p[2]);
-      const pad = 0.02;
-      BBOX.x = [Math.min(...xs)-pad, Math.max(...xs)+pad];
-      BBOX.y = [Math.min(...ys)-pad, Math.max(...ys)+pad];
-      BBOX.z = [Math.min(...zs)-pad, Math.max(...zs)+pad];
-      Plotly.relayout('plot', {{
-        'scene.xaxis.range': BBOX.x,
-        'scene.yaxis.range': BBOX.y,
-        'scene.zaxis.range': BBOX.z,
-      }});
-    }}
-
-    statusBtn.textContent = '⟳ Recompute Workspace Hull';
-  }}, 50);
 }}
 
 // ── Export to SolidWorks ──────────────────────────────────
