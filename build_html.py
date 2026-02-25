@@ -462,13 +462,15 @@ html = f"""<!DOCTYPE html>
         <div class="opt-row"><label>Y</label><input type="range" id="cmcY" min="-10" max="50" value="{NEW_CMC_POS[2]*1000:.1f}" step="0.2"><span class="val" id="cmcYv">{NEW_CMC_POS[2]*1000:.1f}</span><span class="axis-hint">↑ fingers</span></div>
         <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-30" max="30" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.2"><span class="val" id="cmcZv">{NEW_CMC_POS[0]*1000:.1f}</span><span class="axis-hint">↗ palmar</span></div>
 
-        <h3 style="margin-top:8px;">Axis Direction</h3>
-        <div class="opt-row"><label>Az</label><input type="range" id="cmcAz" min="-180" max="180" value="0" step="1"><span class="val" id="cmcAzv">0°</span></div>
-        <div class="opt-row"><label>El</label><input type="range" id="cmcEl" min="-90" max="90" value="0" step="1"><span class="val" id="cmcElv">0°</span></div>
+        <h3 style="margin-top:8px;">Frame Rotation (° around local axes)</h3>
+        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="0" step="1"><span class="val" id="cmcRxv">0°</span><span class="axis-hint" style="font-size:9px;">along finger</span></div>
+        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="0" step="1"><span class="val" id="cmcRyv">0°</span><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
+        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="0" step="1"><span class="val" id="cmcRzv">0°</span><span class="axis-hint" style="font-size:9px;">lateral</span></div>
 
         <h3 style="margin-top:8px;">Coordinates</h3>
         <div class="coord-box" id="coordReadout">Loading...</div>
 
+        <button class="btn-opt" style="background:#e74c3c;color:#fff;" onclick="resetCMC()">↺ Reset CMC</button>
         <button class="btn-opt btn-export" onclick="exportSolidworks()">📐 Export to SolidWorks</button>
         <div class="macro-box" id="macroBox"></div>
       </div>
@@ -558,86 +560,56 @@ FINGER_ORDER.forEach(f => {{
 }});
 
 // ── CMC Optimizer state ──────────────────────────────────
-// Old thumb's rotation matrix (row-major 3×3 flattened) — used as basis
-const OLD_R = {json.dumps(R_old.flatten().tolist())};
 // Initial axis direction for Thumb 2
 const INIT_CMC_AXIS = {json.dumps(NEW_CMC_AXIS.tolist())};
 const INIT_CMC_POS  = {json.dumps((NEW_CMC_POS * 1000).tolist())};  // mm
 
 // Current CMC optimizer values
 const cmcState = {{
-  x: INIT_CMC_POS[0], y: INIT_CMC_POS[1], z: INIT_CMC_POS[2],  // mm
-  az: 0, el: 0,  // degrees (azimuth, elevation offsets)
+  x: INIT_CMC_POS[0], y: INIT_CMC_POS[1], z: INIT_CMC_POS[2],  // mm (URDF)
+  rx: 0, ry: 0, rz: 0,  // degrees: rotation around local X, Y, Z of initial frame
 }};
 
-// Compute initial azimuth/elevation from INIT_CMC_AXIS so readout is correct at start
-(function() {{
-  const a = INIT_CMC_AXIS;
-  cmcState.az = Math.atan2(a[1], a[0]) * RAD2DEG;
-  cmcState.el = Math.asin(Math.max(-1, Math.min(1, a[2]))) * RAD2DEG;
-  // Update slider initial values
-  document.addEventListener('DOMContentLoaded', () => {{
-    const azEl = document.getElementById('cmcAz');
-    const elEl = document.getElementById('cmcEl');
-    if (azEl) {{ azEl.value = cmcState.az.toFixed(0); document.getElementById('cmcAzv').textContent = cmcState.az.toFixed(0) + '°'; }}
-    if (elEl) {{ elEl.value = cmcState.el.toFixed(0); document.getElementById('cmcElv').textContent = cmcState.el.toFixed(0) + '°'; }}
-  }});
-}})();
+// Initial rotation matrix for Thumb 2 (row-major 3×3) — the base frame we rotate from
+const INIT_R = {json.dumps(R_new.flatten().tolist())};
 
-// Build a rotation matrix (row-major 3×3) whose Y-axis = given axis direction
-function buildCmcRotation(axisDir) {{
-  // Normalize
-  let [ax,ay,az] = axisDir;
-  const n = Math.sqrt(ax*ax+ay*ay+az*az);
-  ax/=n; ay/=n; az/=n;
-
-  // Use Rodrigues to rotate OLD_R so its Y-col aligns with new axis
-  // Old Y-axis = column 1 of OLD_R
-  const oy = [OLD_R[1], OLD_R[4], OLD_R[7]];
-
-  // v = oy × axis
-  const vx = oy[1]*az - oy[2]*ay;
-  const vy = oy[2]*ax - oy[0]*az;
-  const vz = oy[0]*ay - oy[1]*ax;
-  const s = Math.sqrt(vx*vx+vy*vy+vz*vz);
-  const c = oy[0]*ax + oy[1]*ay + oy[2]*az;
-
-  let R;
-  if (s > 1e-10) {{
-    const vnx=vx/s, vny=vy/s, vnz=vz/s;
-    // Skew matrix K
-    const K = [0,-vnz,vny, vnz,0,-vnx, -vny,vnx,0];
-    // K²
-    const K2 = [
-      K[0]*K[0]+K[1]*K[3]+K[2]*K[6], K[0]*K[1]+K[1]*K[4]+K[2]*K[7], K[0]*K[2]+K[1]*K[5]+K[2]*K[8],
-      K[3]*K[0]+K[4]*K[3]+K[5]*K[6], K[3]*K[1]+K[4]*K[4]+K[5]*K[7], K[3]*K[2]+K[4]*K[5]+K[5]*K[8],
-      K[6]*K[0]+K[7]*K[3]+K[8]*K[6], K[6]*K[1]+K[7]*K[4]+K[8]*K[7], K[6]*K[2]+K[7]*K[5]+K[8]*K[8],
-    ];
-    // R_align = I + K*s + K²*(1-c)
-    const Ra = new Array(9);
-    for (let i=0;i<9;i++) Ra[i] = (i%4===0?1:0) + K[i]*s + K2[i]*(1-c);
-    // R_new = R_align × OLD_R  (3×3 multiply)
-    R = new Array(9);
-    for (let r=0;r<3;r++) for (let cc=0;cc<3;cc++) {{
-      let sum=0; for (let k=0;k<3;k++) sum += Ra[r*3+k]*OLD_R[k*3+cc]; R[r*3+cc]=sum;
-    }}
-  }} else {{
-    R = c > 0 ? OLD_R.slice() : OLD_R.map(v=>-v);
+// Elementary rotation matrices (row-major 3×3)
+function rotX3(a) {{
+  const c=Math.cos(a), s=Math.sin(a);
+  return [1,0,0, 0,c,-s, 0,s,c];
+}}
+function rotY3(a) {{
+  const c=Math.cos(a), s=Math.sin(a);
+  return [c,0,s, 0,1,0, -s,0,c];
+}}
+function rotZ3(a) {{
+  const c=Math.cos(a), s=Math.sin(a);
+  return [c,-s,0, s,c,0, 0,0,1];
+}}
+// 3×3 multiply (row-major)
+function mul33(A, B) {{
+  const R = new Array(9);
+  for (let r=0;r<3;r++) for (let c=0;c<3;c++) {{
+    let s=0; for (let k=0;k<3;k++) s += A[r*3+k]*B[k*3+c]; R[r*3+c]=s;
   }}
   return R;
 }}
 
-// Build flat 16-element row-major 4×4 from 3×3 rotation + position (mm → m)
+// Build rotation = INIT_R × Rx(rx) × Ry(ry) × Rz(rz)
+// Rotations are intrinsic (applied in the local frame of INIT_R)
+function buildCmcRotation() {{
+  const rx = cmcState.rx * DEG2RAD;
+  const ry = cmcState.ry * DEG2RAD;
+  const rz = cmcState.rz * DEG2RAD;
+  let R = mul33(rotY3(ry), rotZ3(rz));
+  R = mul33(rotX3(rx), R);
+  R = mul33(INIT_R, R);  // apply local rotations in initial frame
+  return R;
+}}
+
+// Build flat 16-element row-major 4×4 from rotation + position (mm → m)
 function buildCmcStaticT() {{
-  const az_rad = cmcState.az * DEG2RAD;
-  const el_rad = cmcState.el * DEG2RAD;
-  // Axis direction from azimuth + elevation (spherical → Cartesian)
-  const axDir = [
-    Math.cos(el_rad) * Math.cos(az_rad),
-    Math.cos(el_rad) * Math.sin(az_rad),
-    Math.sin(el_rad)
-  ];
-  const R = buildCmcRotation(axDir);
+  const R = buildCmcRotation();
   const px = cmcState.x / 1000, py = cmcState.y / 1000, pz = cmcState.z / 1000;
   return [
     R[0],R[1],R[2], px,
@@ -647,15 +619,31 @@ function buildCmcStaticT() {{
   ];
 }}
 
-// Get current axis direction
+// Get current axis direction (column 1 of rotation matrix = local Y = joint rotation axis)
 function getCmcAxis() {{
-  const az_rad = cmcState.az * DEG2RAD;
-  const el_rad = cmcState.el * DEG2RAD;
-  return [
-    Math.cos(el_rad) * Math.cos(az_rad),
-    Math.cos(el_rad) * Math.sin(az_rad),
-    Math.sin(el_rad)
-  ];
+  const R = buildCmcRotation();
+  return [R[1], R[4], R[7]];  // column 1
+}}
+
+// Reset CMC optimizer to initial values
+function resetCMC() {{
+  cmcState.x = INIT_CMC_POS[0];
+  cmcState.y = INIT_CMC_POS[1];
+  cmcState.z = INIT_CMC_POS[2];
+  cmcState.rx = 0; cmcState.ry = 0; cmcState.rz = 0;
+  // Update position sliders (SW coords: X=URDF_Y, Y=URDF_Z, Z=URDF_X)
+  document.getElementById('cmcX').value = cmcState.y.toFixed(1);
+  document.getElementById('cmcXv').textContent = cmcState.y.toFixed(1);
+  document.getElementById('cmcY').value = cmcState.z.toFixed(1);
+  document.getElementById('cmcYv').textContent = cmcState.z.toFixed(1);
+  document.getElementById('cmcZ').value = cmcState.x.toFixed(1);
+  document.getElementById('cmcZv').textContent = cmcState.x.toFixed(1);
+  // Update rotation sliders
+  ['cmcRx','cmcRy','cmcRz'].forEach(id => {{
+    document.getElementById(id).value = 0;
+    document.getElementById(id+'v').textContent = '0°';
+  }});
+  updateCMC();
 }}
 
 // Update Thumb 2's first joint static_T, hull, and refresh plot
@@ -1187,26 +1175,66 @@ function applySolidworks() {{
   }}
   dx/=len; dy/=len; dz/=len;
 
-  // Update CMC state
+  // Update position
   cmcState.x = urdfX;
   cmcState.y = urdfY;
   cmcState.z = urdfZ;
-  // Compute azimuth/elevation from direction vector
-  cmcState.az = Math.atan2(dy, dx) * RAD2DEG;
-  cmcState.el = Math.asin(Math.max(-1, Math.min(1, dz))) * RAD2DEG;
 
-  // Update all sliders to match (sliders are in SolidWorks coords)
-  // cmcX slider = SW X = URDF Y, cmcY slider = SW Y = URDF Z, cmcZ slider = SW Z = URDF X
+  // Compute the target rotation: rotate INIT_R's Y-axis to the new axis direction [dx,dy,dz]
+  // using Rodrigues, then find R_local = INIT_R^T × R_target and extract Euler angles
+  const iy = [INIT_R[1], INIT_R[4], INIT_R[7]]; // INIT_R column 1 (initial Y-axis)
+  const cvx = iy[1]*dz - iy[2]*dy, cvy = iy[2]*dx - iy[0]*dz, cvz = iy[0]*dy - iy[1]*dx;
+  const cs = Math.sqrt(cvx*cvx+cvy*cvy+cvz*cvz);
+  const cc = iy[0]*dx + iy[1]*dy + iy[2]*dz;
+  let R_target;
+  if (cs > 1e-10) {{
+    const nx=cvx/cs, ny=cvy/cs, nz=cvz/cs;
+    const Kk = [0,-nz,ny, nz,0,-nx, -ny,nx,0];
+    const Kk2 = [
+      Kk[0]*Kk[0]+Kk[1]*Kk[3]+Kk[2]*Kk[6], Kk[0]*Kk[1]+Kk[1]*Kk[4]+Kk[2]*Kk[7], Kk[0]*Kk[2]+Kk[1]*Kk[5]+Kk[2]*Kk[8],
+      Kk[3]*Kk[0]+Kk[4]*Kk[3]+Kk[5]*Kk[6], Kk[3]*Kk[1]+Kk[4]*Kk[4]+Kk[5]*Kk[7], Kk[3]*Kk[2]+Kk[4]*Kk[5]+Kk[5]*Kk[8],
+      Kk[6]*Kk[0]+Kk[7]*Kk[3]+Kk[8]*Kk[6], Kk[6]*Kk[1]+Kk[7]*Kk[4]+Kk[8]*Kk[7], Kk[6]*Kk[2]+Kk[7]*Kk[5]+Kk[8]*Kk[8],
+    ];
+    const Ra = new Array(9);
+    for (let i=0;i<9;i++) Ra[i] = (i%4===0?1:0) + Kk[i]*cs + Kk2[i]*(1-cc);
+    R_target = mul33(Ra, INIT_R);
+  }} else {{
+    R_target = cc > 0 ? INIT_R.slice() : INIT_R.map(v=>-v);
+  }}
+  // R_local = INIT_R^T × R_target  (since INIT_R is orthogonal, inv = transpose)
+  const IT = [INIT_R[0],INIT_R[3],INIT_R[6], INIT_R[1],INIT_R[4],INIT_R[7], INIT_R[2],INIT_R[5],INIT_R[8]];
+  const RL = mul33(IT, R_target);
+  // Extract XYZ Euler angles: R_local = Rx(rx) × Ry(ry) × Rz(rz)
+  // RL[2] = sin(ry), so ry = asin(RL[2])
+  const sy = Math.max(-1, Math.min(1, RL[2]));
+  const ry_rad = Math.asin(sy);
+  const cy = Math.cos(ry_rad);
+  let rx_rad, rz_rad;
+  if (Math.abs(cy) > 1e-6) {{
+    rx_rad = Math.atan2(-RL[5], RL[8]);  // atan2(-R[1][2], R[2][2])
+    rz_rad = Math.atan2(-RL[1], RL[0]);  // atan2(-R[0][1], R[0][0])
+  }} else {{
+    rx_rad = Math.atan2(RL[3], RL[4]);
+    rz_rad = 0;
+  }}
+  cmcState.rx = rx_rad * RAD2DEG;
+  cmcState.ry = ry_rad * RAD2DEG;
+  cmcState.rz = rz_rad * RAD2DEG;
+
+  // Update position sliders (SW coords: cmcX=SW_X=URDF_Y, cmcY=SW_Y=URDF_Z, cmcZ=SW_Z=URDF_X)
   document.getElementById('cmcX').value = urdfY.toFixed(1);
   document.getElementById('cmcXv').textContent = urdfY.toFixed(1);
   document.getElementById('cmcY').value = urdfZ.toFixed(1);
   document.getElementById('cmcYv').textContent = urdfZ.toFixed(1);
   document.getElementById('cmcZ').value = urdfX.toFixed(1);
   document.getElementById('cmcZv').textContent = urdfX.toFixed(1);
-  document.getElementById('cmcAz').value = cmcState.az.toFixed(0);
-  document.getElementById('cmcAzv').textContent = cmcState.az.toFixed(0) + '°';
-  document.getElementById('cmcEl').value = cmcState.el.toFixed(0);
-  document.getElementById('cmcElv').textContent = cmcState.el.toFixed(0) + '°';
+  // Update rotation sliders
+  document.getElementById('cmcRx').value = cmcState.rx.toFixed(0);
+  document.getElementById('cmcRxv').textContent = cmcState.rx.toFixed(0) + '°';
+  document.getElementById('cmcRy').value = cmcState.ry.toFixed(0);
+  document.getElementById('cmcRyv').textContent = cmcState.ry.toFixed(0) + '°';
+  document.getElementById('cmcRz').value = cmcState.rz.toFixed(0);
+  document.getElementById('cmcRzv').textContent = cmcState.rz.toFixed(0) + '°';
 
   // Clamp slider ranges if needed
   ['cmcX','cmcY','cmcZ'].forEach(id => {{
@@ -1302,8 +1330,9 @@ End Sub`;
 }}
 
 // ── CMC Optimizer slider listeners ───────────────────────
-// Sliders labeled in SolidWorks coords: cmcX=SW_X→URDF_Y, cmcY=SW_Y→URDF_Z, cmcZ=SW_Z→URDF_X
-['cmcX','cmcY','cmcZ','cmcAz','cmcEl'].forEach(id => {{
+// Position: cmcX=SW_X→URDF_Y, cmcY=SW_Y→URDF_Z, cmcZ=SW_Z→URDF_X
+// Rotation: cmcRx/Ry/Rz = local frame rotation offsets (degrees)
+['cmcX','cmcY','cmcZ','cmcRx','cmcRy','cmcRz'].forEach(id => {{
   const el = document.getElementById(id);
   const valEl = document.getElementById(id + 'v');
   el.addEventListener('input', () => {{
@@ -1311,8 +1340,9 @@ End Sub`;
     if (id==='cmcX') {{ cmcState.y=v; valEl.textContent=v.toFixed(1); }}
     else if (id==='cmcY') {{ cmcState.z=v; valEl.textContent=v.toFixed(1); }}
     else if (id==='cmcZ') {{ cmcState.x=v; valEl.textContent=v.toFixed(1); }}
-    else if (id==='cmcAz') {{ cmcState.az=v; valEl.textContent=v.toFixed(0)+'°'; }}
-    else if (id==='cmcEl') {{ cmcState.el=v; valEl.textContent=v.toFixed(0)+'°'; }}
+    else if (id==='cmcRx') {{ cmcState.rx=v; valEl.textContent=v.toFixed(0)+'°'; }}
+    else if (id==='cmcRy') {{ cmcState.ry=v; valEl.textContent=v.toFixed(0)+'°'; }}
+    else if (id==='cmcRz') {{ cmcState.rz=v; valEl.textContent=v.toFixed(0)+'°'; }}
     updateCMC();
   }});
 }});
