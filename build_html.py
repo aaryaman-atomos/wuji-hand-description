@@ -402,6 +402,7 @@ html = f"""<!DOCTYPE html>
   .input-row input[type=number] {{ flex: 1; padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px;
                                    font-size: 11px; font-family: monospace; background: #fff; }}
   .input-row input[type=number]:focus {{ outline: none; border-color: #3498db; box-shadow: 0 0 0 2px rgba(52,152,219,0.15); }}
+  .axis-hint {{ font-size: 9px; color: #999; flex-shrink: 0; width: 52px; }}
   .input-group-label {{ font-size: 10px; font-weight: 700; color: #555; margin: 6px 0 3px; }}
   .btn-sw {{ background: #3498db; color: #fff; }}
   .btn-sw:hover {{ background: #2980b9; }}
@@ -434,24 +435,24 @@ html = f"""<!DOCTYPE html>
     <h2>📐 SolidWorks Input</h2>
     <div class="sw-input">
       <p>Enter coordinates from SolidWorks sketch origin (mm).<br>
-         The simulator will convert to URDF automatically.</p>
+         Looking at palm from front: X→right (thumb), Y→up (fingers), Z→out (palmar).</p>
       <div class="input-group-label">CMC Origin (from sketch origin)</div>
-      <div class="input-row"><label>X</label><input type="number" id="swOx" step="0.01" placeholder="dx"></div>
-      <div class="input-row"><label>Y</label><input type="number" id="swOy" step="0.01" placeholder="dy"></div>
-      <div class="input-row"><label>Z</label><input type="number" id="swOz" step="0.01" placeholder="dz"></div>
+      <div class="input-row"><label>X</label><input type="number" id="swOx" step="0.01" placeholder="dx"><span class="axis-hint">→ thumb</span></div>
+      <div class="input-row"><label>Y</label><input type="number" id="swOy" step="0.01" placeholder="dy"><span class="axis-hint">↑ fingers</span></div>
+      <div class="input-row"><label>Z</label><input type="number" id="swOz" step="0.01" placeholder="dz"><span class="axis-hint">↗ palmar</span></div>
       <div class="input-group-label">Point on Axis (from sketch origin)</div>
-      <div class="input-row"><label>X</label><input type="number" id="swAx" step="0.01" placeholder="dx"></div>
-      <div class="input-row"><label>Y</label><input type="number" id="swAy" step="0.01" placeholder="dy"></div>
-      <div class="input-row"><label>Z</label><input type="number" id="swAz" step="0.01" placeholder="dz"></div>
+      <div class="input-row"><label>X</label><input type="number" id="swAx" step="0.01" placeholder="dx"><span class="axis-hint">→ thumb</span></div>
+      <div class="input-row"><label>Y</label><input type="number" id="swAy" step="0.01" placeholder="dy"><span class="axis-hint">↑ fingers</span></div>
+      <div class="input-row"><label>Z</label><input type="number" id="swAz" step="0.01" placeholder="dz"><span class="axis-hint">↗ palmar</span></div>
       <button class="btn-opt btn-sw" onclick="applySolidworks()">⬇ Apply to Simulator</button>
     </div>
 
     <h2>🔧 Thumb 2 CMC Optimizer</h2>
     <div class="optimizer">
-      <h3>Position (mm)</h3>
-      <div class="opt-row"><label>X</label><input type="range" id="cmcX" min="-20" max="30" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.2"><span class="val" id="cmcXv">{NEW_CMC_POS[0]*1000:.1f}</span></div>
-      <div class="opt-row"><label>Y</label><input type="range" id="cmcY" min="-10" max="40" value="{NEW_CMC_POS[1]*1000:.1f}" step="0.2"><span class="val" id="cmcYv">{NEW_CMC_POS[1]*1000:.1f}</span></div>
-      <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-10" max="50" value="{NEW_CMC_POS[2]*1000:.1f}" step="0.2"><span class="val" id="cmcZv">{NEW_CMC_POS[2]*1000:.1f}</span></div>
+      <h3>Position (SolidWorks mm)</h3>
+      <div class="opt-row"><label>X</label><input type="range" id="cmcX" min="-10" max="40" value="{NEW_CMC_POS[1]*1000:.1f}" step="0.2"><span class="val" id="cmcXv">{NEW_CMC_POS[1]*1000:.1f}</span><span class="axis-hint">→ thumb</span></div>
+      <div class="opt-row"><label>Y</label><input type="range" id="cmcY" min="-10" max="50" value="{NEW_CMC_POS[2]*1000:.1f}" step="0.2"><span class="val" id="cmcYv">{NEW_CMC_POS[2]*1000:.1f}</span><span class="axis-hint">↑ fingers</span></div>
+      <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-30" max="30" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.2"><span class="val" id="cmcZv">{NEW_CMC_POS[0]*1000:.1f}</span><span class="axis-hint">↗ palmar</span></div>
 
       <h3 style="margin-top:8px;">Axis Direction</h3>
       <div class="opt-row"><label>Az</label><input type="range" id="cmcAz" min="-180" max="180" value="0" step="1"><span class="val" id="cmcAzv">0°</span></div>
@@ -656,19 +657,22 @@ function updateCMC() {{
 
 // Update the coordinate readout panel
 function updateCoordReadout() {{
-  const px = cmcState.x, py = cmcState.y, pz = cmcState.z;
-  const ax = getCmcAxis();
-  // URDF→Sketch mapping: sketch(x,y,z) = urdf(y,z,x)
-  const sx = py, sy = pz, sz = px;
-  const sax = ax[1], say = ax[2], saz = ax[0];
+  // Internal state is URDF: cmcState.x=URDF_X, .y=URDF_Y, .z=URDF_Z
+  const ux = cmcState.x, uy = cmcState.y, uz = cmcState.z;
+  const uax = getCmcAxis();
+  // URDF→SolidWorks: SW(x,y,z) = URDF(y,z,x)
+  const sx = uy, sy = uz, sz = ux;
+  const sax = uax[1], say = uax[2], saz = uax[0];
   const el = document.getElementById('coordReadout');
   el.innerHTML =
-    '<b>URDF (mm):</b>\\n' +
-    '  pos = (' + px.toFixed(2) + ', ' + py.toFixed(2) + ', ' + pz.toFixed(2) + ')\\n' +
-    '  axis = (' + ax[0].toFixed(4) + ', ' + ax[1].toFixed(4) + ', ' + ax[2].toFixed(4) + ')\\n' +
     '<b>SolidWorks sketch (mm):</b>\\n' +
-    '  pos = (' + sx.toFixed(2) + ', ' + sy.toFixed(2) + ', ' + sz.toFixed(2) + ')\\n' +
-    '  axis = (' + sax.toFixed(4) + ', ' + say.toFixed(4) + ', ' + saz.toFixed(4) + ')';
+    '  X (→thumb)  = ' + sx.toFixed(2) + '\\n' +
+    '  Y (↑fingers) = ' + sy.toFixed(2) + '\\n' +
+    '  Z (↗palmar) = ' + sz.toFixed(2) + '\\n' +
+    '  axis = (' + sax.toFixed(4) + ', ' + say.toFixed(4) + ', ' + saz.toFixed(4) + ')\\n' +
+    '<b>URDF (mm):</b>\\n' +
+    '  pos = (' + ux.toFixed(2) + ', ' + uy.toFixed(2) + ', ' + uz.toFixed(2) + ')\\n' +
+    '  axis = (' + uax[0].toFixed(4) + ', ' + uax[1].toFixed(4) + ', ' + uax[2].toFixed(4) + ')';
 }}
 
 // ── FK — returns joint positions (for skeleton) ──────────
@@ -1180,13 +1184,14 @@ function applySolidworks() {{
   cmcState.az = Math.atan2(dy, dx) * RAD2DEG;
   cmcState.el = Math.asin(Math.max(-1, Math.min(1, dz))) * RAD2DEG;
 
-  // Update all sliders to match
-  document.getElementById('cmcX').value = urdfX.toFixed(1);
-  document.getElementById('cmcXv').textContent = urdfX.toFixed(1);
-  document.getElementById('cmcY').value = urdfY.toFixed(1);
-  document.getElementById('cmcYv').textContent = urdfY.toFixed(1);
-  document.getElementById('cmcZ').value = urdfZ.toFixed(1);
-  document.getElementById('cmcZv').textContent = urdfZ.toFixed(1);
+  // Update all sliders to match (sliders are in SolidWorks coords)
+  // cmcX slider = SW X = URDF Y, cmcY slider = SW Y = URDF Z, cmcZ slider = SW Z = URDF X
+  document.getElementById('cmcX').value = urdfY.toFixed(1);
+  document.getElementById('cmcXv').textContent = urdfY.toFixed(1);
+  document.getElementById('cmcY').value = urdfZ.toFixed(1);
+  document.getElementById('cmcYv').textContent = urdfZ.toFixed(1);
+  document.getElementById('cmcZ').value = urdfX.toFixed(1);
+  document.getElementById('cmcZv').textContent = urdfX.toFixed(1);
   document.getElementById('cmcAz').value = cmcState.az.toFixed(0);
   document.getElementById('cmcAzv').textContent = cmcState.az.toFixed(0) + '°';
   document.getElementById('cmcEl').value = cmcState.el.toFixed(0);
@@ -1286,14 +1291,15 @@ End Sub`;
 }}
 
 // ── CMC Optimizer slider listeners ───────────────────────
+// Sliders labeled in SolidWorks coords: cmcX=SW_X→URDF_Y, cmcY=SW_Y→URDF_Z, cmcZ=SW_Z→URDF_X
 ['cmcX','cmcY','cmcZ','cmcAz','cmcEl'].forEach(id => {{
   const el = document.getElementById(id);
   const valEl = document.getElementById(id + 'v');
   el.addEventListener('input', () => {{
     const v = parseFloat(el.value);
-    if (id==='cmcX') {{ cmcState.x=v; valEl.textContent=v.toFixed(1); }}
-    else if (id==='cmcY') {{ cmcState.y=v; valEl.textContent=v.toFixed(1); }}
-    else if (id==='cmcZ') {{ cmcState.z=v; valEl.textContent=v.toFixed(1); }}
+    if (id==='cmcX') {{ cmcState.y=v; valEl.textContent=v.toFixed(1); }}
+    else if (id==='cmcY') {{ cmcState.z=v; valEl.textContent=v.toFixed(1); }}
+    else if (id==='cmcZ') {{ cmcState.x=v; valEl.textContent=v.toFixed(1); }}
     else if (id==='cmcAz') {{ cmcState.az=v; valEl.textContent=v.toFixed(0)+'°'; }}
     else if (id==='cmcEl') {{ cmcState.el=v; valEl.textContent=v.toFixed(0)+'°'; }}
     updateCMC();
