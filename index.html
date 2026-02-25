@@ -33,6 +33,11 @@
           background: #555; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
   .btn:hover { background: #333; }
   .info { font-size: 11px; color: #999; margin-top: 12px; line-height: 1.5; }
+  .collapsible { cursor: pointer; user-select: none; }
+  .collapsible::after { content: ' ▾'; font-size: 12px; }
+  .collapsible.collapsed::after { content: ' ▸'; }
+  .collapse-body { overflow: hidden; transition: max-height 0.25s ease; }
+  .collapse-body.hidden { max-height: 0 !important; padding-top: 0; padding-bottom: 0; }
   .optimizer { background: #f0faf8; border: 2px solid #1abc9c; border-radius: 8px;
                 padding: 10px; margin-bottom: 12px; }
   .optimizer h3 { font-size: 13px; color: #1abc9c; margin: 0 0 8px; }
@@ -89,42 +94,48 @@
            style="border-color:#555;color:#555;background:#5551">Tip Direction</div>
     </div>
 
-    <h2>📐 SolidWorks Input</h2>
-    <div class="sw-input">
-      <p>Enter coordinates from SolidWorks sketch origin (mm).<br>
-         Looking at palm from front: X→right (thumb), Y→up (fingers), Z→out (palmar).</p>
-      <div class="input-group-label">CMC Origin (from sketch origin)</div>
-      <div class="input-row"><label>X</label><input type="number" id="swOx" step="0.01" placeholder="dx"><span class="axis-hint">→ thumb</span></div>
-      <div class="input-row"><label>Y</label><input type="number" id="swOy" step="0.01" placeholder="dy"><span class="axis-hint">↑ fingers</span></div>
-      <div class="input-row"><label>Z</label><input type="number" id="swOz" step="0.01" placeholder="dz"><span class="axis-hint">↗ palmar</span></div>
-      <div class="input-group-label">Point on Axis (from sketch origin)</div>
-      <div class="input-row"><label>X</label><input type="number" id="swAx" step="0.01" placeholder="dx"><span class="axis-hint">→ thumb</span></div>
-      <div class="input-row"><label>Y</label><input type="number" id="swAy" step="0.01" placeholder="dy"><span class="axis-hint">↑ fingers</span></div>
-      <div class="input-row"><label>Z</label><input type="number" id="swAz" step="0.01" placeholder="dz"><span class="axis-hint">↗ palmar</span></div>
-      <button class="btn-opt btn-sw" onclick="applySolidworks()">⬇ Apply to Simulator</button>
+    <h2 class="collapsible collapsed" data-target="swInputBody">📐 SolidWorks Input</h2>
+    <div class="collapse-body hidden" id="swInputBody">
+      <div class="sw-input">
+        <p>Enter coordinates from SolidWorks sketch origin (mm).<br>
+           Looking at palm from front: X→right (thumb), Y→up (fingers), Z→out (palmar).</p>
+        <div class="input-group-label">CMC Origin (from sketch origin)</div>
+        <div class="input-row"><label>X</label><input type="number" id="swOx" step="0.01" placeholder="dx"><span class="axis-hint">→ thumb</span></div>
+        <div class="input-row"><label>Y</label><input type="number" id="swOy" step="0.01" placeholder="dy"><span class="axis-hint">↑ fingers</span></div>
+        <div class="input-row"><label>Z</label><input type="number" id="swOz" step="0.01" placeholder="dz"><span class="axis-hint">↗ palmar</span></div>
+        <div class="input-group-label">Point on Axis (from sketch origin)</div>
+        <div class="input-row"><label>X</label><input type="number" id="swAx" step="0.01" placeholder="dx"><span class="axis-hint">→ thumb</span></div>
+        <div class="input-row"><label>Y</label><input type="number" id="swAy" step="0.01" placeholder="dy"><span class="axis-hint">↑ fingers</span></div>
+        <div class="input-row"><label>Z</label><input type="number" id="swAz" step="0.01" placeholder="dz"><span class="axis-hint">↗ palmar</span></div>
+        <button class="btn-opt btn-sw" onclick="applySolidworks()">⬇ Apply to Simulator</button>
+      </div>
     </div>
 
-    <h2>🔧 Thumb 2 CMC Optimizer</h2>
-    <div class="optimizer">
-      <h3>Position (SolidWorks mm)</h3>
-      <div class="opt-row"><label>X</label><input type="range" id="cmcX" min="-10" max="40" value="27.5" step="0.2"><span class="val" id="cmcXv">27.5</span><span class="axis-hint">→ thumb</span></div>
-      <div class="opt-row"><label>Y</label><input type="range" id="cmcY" min="-10" max="50" value="18.5" step="0.2"><span class="val" id="cmcYv">18.5</span><span class="axis-hint">↑ fingers</span></div>
-      <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-30" max="30" value="5.5" step="0.2"><span class="val" id="cmcZv">5.5</span><span class="axis-hint">↗ palmar</span></div>
+    <h2 class="collapsible collapsed" data-target="optimizerBody">🔧 Thumb 2 CMC Optimizer</h2>
+    <div class="collapse-body hidden" id="optimizerBody">
+      <div class="optimizer">
+        <h3>Position (SolidWorks mm)</h3>
+        <div class="opt-row"><label>X</label><input type="range" id="cmcX" min="-10" max="40" value="27.5" step="0.2"><span class="val" id="cmcXv">27.5</span><span class="axis-hint">→ thumb</span></div>
+        <div class="opt-row"><label>Y</label><input type="range" id="cmcY" min="-10" max="50" value="18.5" step="0.2"><span class="val" id="cmcYv">18.5</span><span class="axis-hint">↑ fingers</span></div>
+        <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-30" max="30" value="5.5" step="0.2"><span class="val" id="cmcZv">5.5</span><span class="axis-hint">↗ palmar</span></div>
 
-      <h3 style="margin-top:8px;">Axis Direction</h3>
-      <div class="opt-row"><label>Az</label><input type="range" id="cmcAz" min="-180" max="180" value="0" step="1"><span class="val" id="cmcAzv">0°</span></div>
-      <div class="opt-row"><label>El</label><input type="range" id="cmcEl" min="-90" max="90" value="0" step="1"><span class="val" id="cmcElv">0°</span></div>
+        <h3 style="margin-top:8px;">Axis Direction</h3>
+        <div class="opt-row"><label>Az</label><input type="range" id="cmcAz" min="-180" max="180" value="0" step="1"><span class="val" id="cmcAzv">0°</span></div>
+        <div class="opt-row"><label>El</label><input type="range" id="cmcEl" min="-90" max="90" value="0" step="1"><span class="val" id="cmcElv">0°</span></div>
 
-      <h3 style="margin-top:8px;">Coordinates</h3>
-      <div class="coord-box" id="coordReadout">Loading...</div>
+        <h3 style="margin-top:8px;">Coordinates</h3>
+        <div class="coord-box" id="coordReadout">Loading...</div>
 
-      <button class="btn-opt btn-export" onclick="exportSolidworks()">📐 Export to SolidWorks</button>
-      <div class="macro-box" id="macroBox"></div>
+        <button class="btn-opt btn-export" onclick="exportSolidworks()">📐 Export to SolidWorks</button>
+        <div class="macro-box" id="macroBox"></div>
+      </div>
     </div>
 
-    <h2>🎛️ Joint Controls</h2>
-    <div id="sliderContainer"></div>
-    <button class="btn" onclick="resetAll()">↺ Reset All Joints</button>
+    <h2 class="collapsible" data-target="jointBody">🎛️ Joint Controls</h2>
+    <div class="collapse-body" id="jointBody" style="max-height:2000px;">
+      <div id="sliderContainer"></div>
+      <button class="btn" onclick="resetAll()">↺ Reset All Joints</button>
+    </div>
 
     <div class="info">
       Tip: Click &amp; drag the 3D plot to rotate. Scroll to zoom.<br>
@@ -197,7 +208,7 @@ const SHAFT_LEN = 0.013;   // 13 mm shaft
 const HEAD_LEN  = 0.004;   // 4 mm arrowhead cone
 const HEAD_RAD  = 0.0018;  // 1.8 mm arrowhead base radius
 const HEAD_SIDES = 8;      // octagonal cone
-FINGER_ORDER.forEach(f => hullVisible[f] = true);
+FINGER_ORDER.forEach(f => hullVisible[f] = false);
 FINGER_ORDER.forEach(f => fingerVisible[f] = true);
 FINGER_ORDER.forEach(f => {
   CHAINS[f].forEach(j => { if (j.type==='revolute') angles[j.name]=0; });
@@ -538,9 +549,9 @@ const layout = {
   template: 'plotly_white',
   paper_bgcolor:'white', plot_bgcolor:'white',
   scene: {
-    xaxis:{range:BBOX.x, title:'X', backgroundcolor:'white', gridcolor:'#e0e0e0', showbackground:true},
-    yaxis:{range:BBOX.y, title:'Y', backgroundcolor:'white', gridcolor:'#e0e0e0', showbackground:true},
-    zaxis:{range:BBOX.z, title:'Z', backgroundcolor:'white', gridcolor:'#e0e0e0', showbackground:true},
+    xaxis:{range:BBOX.x, title:'Z (↗ palmar)', backgroundcolor:'white', gridcolor:'#e0e0e0', showbackground:true},
+    yaxis:{range:BBOX.y, title:'X (→ thumb)', backgroundcolor:'white', gridcolor:'#e0e0e0', showbackground:true},
+    zaxis:{range:BBOX.z, title:'Y (↑ fingers)', backgroundcolor:'white', gridcolor:'#e0e0e0', showbackground:true},
     aspectmode:'cube',
     camera:{eye:{x:1.4,y:1.4,z:0.8}},
     bgcolor:'white',
@@ -706,7 +717,7 @@ const fingerToggleContainer = document.getElementById('fingerToggles');
 const toggleContainer = document.getElementById('hullToggles');
 FINGER_ORDER.forEach(f => {
   const btn = document.createElement('div');
-  btn.className = 'toggle-btn';
+  btn.className = 'toggle-btn off';
   btn.textContent = f;
   btn.style.borderColor = COLORS[f];
   btn.style.color = COLORS[f];
@@ -960,6 +971,20 @@ End Sub`;
     else if (id==='cmcAz') { cmcState.az=v; valEl.textContent=v.toFixed(0)+'°'; }
     else if (id==='cmcEl') { cmcState.el=v; valEl.textContent=v.toFixed(0)+'°'; }
     updateCMC();
+  });
+});
+
+// ── Collapsible sections ─────────────────────────────────
+document.querySelectorAll('.collapsible').forEach(h => {
+  h.addEventListener('click', () => {
+    const body = document.getElementById(h.dataset.target);
+    const isCollapsed = h.classList.toggle('collapsed');
+    if (isCollapsed) {
+      body.classList.add('hidden');
+    } else {
+      body.classList.remove('hidden');
+      body.style.maxHeight = body.scrollHeight + 'px';
+    }
   });
 });
 
