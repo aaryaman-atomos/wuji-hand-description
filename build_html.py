@@ -393,6 +393,18 @@ html = f"""<!DOCTYPE html>
   .macro-box {{ display:none; background: #1e1e1e; color: #d4d4d4; border-radius: 6px; padding: 10px; margin-top: 6px;
                 font-family: 'Consolas','Courier New',monospace; font-size: 10px; line-height: 1.5;
                 max-height: 200px; overflow-y: auto; white-space: pre; }}
+  .sw-input {{ background: #eff8ff; border: 2px solid #3498db; border-radius: 8px;
+               padding: 10px; margin-bottom: 12px; }}
+  .sw-input h3 {{ font-size: 13px; color: #3498db; margin: 0 0 6px; }}
+  .sw-input p {{ font-size: 10px; color: #777; margin: 0 0 6px; line-height: 1.4; }}
+  .input-row {{ display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }}
+  .input-row label {{ width: 18px; font-size: 11px; font-weight: 700; color: #3498db; text-align: right; flex-shrink: 0; }}
+  .input-row input[type=number] {{ flex: 1; padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px;
+                                   font-size: 11px; font-family: monospace; background: #fff; }}
+  .input-row input[type=number]:focus {{ outline: none; border-color: #3498db; box-shadow: 0 0 0 2px rgba(52,152,219,0.15); }}
+  .input-group-label {{ font-size: 10px; font-weight: 700; color: #555; margin: 6px 0 3px; }}
+  .btn-sw {{ background: #3498db; color: #fff; }}
+  .btn-sw:hover {{ background: #2980b9; }}
 </style>
 </head>
 <body>
@@ -417,6 +429,21 @@ html = f"""<!DOCTYPE html>
     <div class="toggle-section">
       <div class="toggle-btn" id="vectorToggle"
            style="border-color:#555;color:#555;background:#5551">Tip Direction</div>
+    </div>
+
+    <h2>📐 SolidWorks Input</h2>
+    <div class="sw-input">
+      <p>Enter coordinates from SolidWorks sketch origin (mm).<br>
+         The simulator will convert to URDF automatically.</p>
+      <div class="input-group-label">CMC Origin (from sketch origin)</div>
+      <div class="input-row"><label>X</label><input type="number" id="swOx" step="0.01" placeholder="dx"></div>
+      <div class="input-row"><label>Y</label><input type="number" id="swOy" step="0.01" placeholder="dy"></div>
+      <div class="input-row"><label>Z</label><input type="number" id="swOz" step="0.01" placeholder="dz"></div>
+      <div class="input-group-label">Point on Axis (from sketch origin)</div>
+      <div class="input-row"><label>X</label><input type="number" id="swAx" step="0.01" placeholder="dx"></div>
+      <div class="input-row"><label>Y</label><input type="number" id="swAy" step="0.01" placeholder="dy"></div>
+      <div class="input-row"><label>Z</label><input type="number" id="swAz" step="0.01" placeholder="dz"></div>
+      <button class="btn-opt btn-sw" onclick="applySolidworks()">⬇ Apply to Simulator</button>
     </div>
 
     <h2>🔧 Thumb 2 CMC Optimizer</h2>
@@ -1116,6 +1143,70 @@ function transformT2Hull() {{
       break;
     }}
   }}
+}}
+
+// ── Apply SolidWorks coordinates ─────────────────────────
+function applySolidworks() {{
+  const ox = parseFloat(document.getElementById('swOx').value);
+  const oy = parseFloat(document.getElementById('swOy').value);
+  const oz = parseFloat(document.getElementById('swOz').value);
+  const ax = parseFloat(document.getElementById('swAx').value);
+  const ay = parseFloat(document.getElementById('swAy').value);
+  const az = parseFloat(document.getElementById('swAz').value);
+
+  if ([ox,oy,oz,ax,ay,az].some(v => isNaN(v))) {{
+    alert('Please fill in all 6 coordinate fields.');
+    return;
+  }}
+
+  // Convert SolidWorks sketch → URDF:  URDF(x,y,z) = Sketch(z, x, y)
+  const urdfX = oz, urdfY = ox, urdfZ = oy;        // CMC origin in URDF mm
+  const urdfAx = az, urdfAy = ax, urdfAz = ay;      // Axis point in URDF mm
+
+  // Axis direction = axis_point - origin (in URDF)
+  let dx = urdfAx - urdfX, dy = urdfAy - urdfY, dz = urdfAz - urdfZ;
+  const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  if (len < 1e-6) {{
+    alert('Origin and axis point are too close. Please use a different axis point.');
+    return;
+  }}
+  dx/=len; dy/=len; dz/=len;
+
+  // Update CMC state
+  cmcState.x = urdfX;
+  cmcState.y = urdfY;
+  cmcState.z = urdfZ;
+  // Compute azimuth/elevation from direction vector
+  cmcState.az = Math.atan2(dy, dx) * RAD2DEG;
+  cmcState.el = Math.asin(Math.max(-1, Math.min(1, dz))) * RAD2DEG;
+
+  // Update all sliders to match
+  document.getElementById('cmcX').value = urdfX.toFixed(1);
+  document.getElementById('cmcXv').textContent = urdfX.toFixed(1);
+  document.getElementById('cmcY').value = urdfY.toFixed(1);
+  document.getElementById('cmcYv').textContent = urdfY.toFixed(1);
+  document.getElementById('cmcZ').value = urdfZ.toFixed(1);
+  document.getElementById('cmcZv').textContent = urdfZ.toFixed(1);
+  document.getElementById('cmcAz').value = cmcState.az.toFixed(0);
+  document.getElementById('cmcAzv').textContent = cmcState.az.toFixed(0) + '°';
+  document.getElementById('cmcEl').value = cmcState.el.toFixed(0);
+  document.getElementById('cmcElv').textContent = cmcState.el.toFixed(0) + '°';
+
+  // Clamp slider ranges if needed
+  ['cmcX','cmcY','cmcZ'].forEach(id => {{
+    const el = document.getElementById(id);
+    const v = parseFloat(el.value);
+    if (v < parseFloat(el.min)) el.min = Math.floor(v - 5);
+    if (v > parseFloat(el.max)) el.max = Math.ceil(v + 5);
+  }});
+
+  updateCMC();
+
+  // Flash confirmation
+  const btn = document.querySelector('.btn-sw');
+  const orig = btn.textContent;
+  btn.textContent = '✅ Applied!';
+  setTimeout(() => btn.textContent = orig, 1500);
 }}
 
 // ── Export to SolidWorks ──────────────────────────────────
