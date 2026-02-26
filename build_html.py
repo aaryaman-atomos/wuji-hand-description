@@ -482,8 +482,8 @@ html = f"""<!DOCTYPE html>
       </div>
     </div>
 
-    <h2 class="collapsible" data-target="jointBody">🎛️ Joint Controls</h2>
-    <div class="collapse-body" id="jointBody" style="max-height:2000px;">
+    <h2 class="collapsible collapsed" data-target="jointBody">🎛️ Joint Controls</h2>
+    <div class="collapse-body hidden" id="jointBody">
       <div id="sliderContainer"></div>
       <button class="btn" onclick="resetAll()">↺ Reset All Joints</button>
     </div>
