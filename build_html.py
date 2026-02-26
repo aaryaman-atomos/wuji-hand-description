@@ -165,14 +165,13 @@ for fname, chain in chains.items():
 print("Building Thumb 2 (relocated CMC) ...")
 
 # New CMC position in URDF coordinates (meters)
-# Sketch (27.46, 18.54, 5.54) mm → URDF (sketch_z, sketch_x, sketch_y)
-NEW_CMC_POS = np.array([0.00554, 0.02746, 0.01854])
+# Sketch (27.460, 12.600, 10.400) mm → URDF (sketch_z, sketch_x, sketch_y)
+NEW_CMC_POS = np.array([0.01040, 0.02746, 0.01260])
 
-# Axis direction: vector from new CMC to axis point, in URDF coords
-# Axis point sketch (22.55, 9.91, 32.25) → URDF (32.25, 22.55, 9.91) mm
-# Direction = axis_point - cmc = (26.71, -4.91, -8.63) mm
-_axis_raw = np.array([26.71, -4.91, -8.63])
-NEW_CMC_AXIS = _axis_raw / np.linalg.norm(_axis_raw)
+# Axis direction in URDF coords
+# Sketch direction (-0.036760, -0.608509, 0.792695) → URDF (sketch_z, sketch_x, sketch_y)
+NEW_CMC_AXIS = np.array([0.792695, -0.036760, -0.608509])
+NEW_CMC_AXIS = NEW_CMC_AXIS / np.linalg.norm(NEW_CMC_AXIS)  # ensure unit
 
 # Get old CMC's rotation matrix from its static_T
 T_old_first = np.array(chains_json["Thumb"][0]["static_T"]).reshape(4, 4)
