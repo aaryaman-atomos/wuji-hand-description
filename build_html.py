@@ -164,15 +164,16 @@ for fname, chain in chains.items():
 # ── Add Thumb 2 (relocated CMC joint) ───────────────────────
 print("Building Thumb 2 (relocated CMC) ...")
 
-# New CMC position in URDF coordinates (meters)
-# Sketch (27.46, 18.54, 5.54) mm → URDF (sketch_z, sketch_x, sketch_y)
-NEW_CMC_POS = np.array([0.00554, 0.02746, 0.01854])
-
-# Axis direction: vector from new CMC to axis point, in URDF coords
-# Axis point sketch (22.55, 9.91, 32.25) → URDF (32.25, 22.55, 9.91) mm
-# Direction = axis_point - cmc = (26.71, -4.91, -8.63) mm
-_axis_raw = np.array([26.71, -4.91, -8.63])
+# SolidWorks Input CMC origin: (29.65, 18.54, 5.54) mm → URDF (5.54, 29.65, 18.54) mm
+_sw_origin = np.array([0.00554, 0.02965, 0.01854])
+# SolidWorks Input point on axis: (11.49, -18.68, 18.21) mm → URDF (18.21, 11.49, -18.68) mm
+_sw_axis_pt = np.array([0.01821, 0.01149, -0.01868])
+# Axis direction in URDF
+_axis_raw = (_sw_axis_pt - _sw_origin) * 1000  # (12.67, -18.16, -37.22) mm
 NEW_CMC_AXIS = _axis_raw / np.linalg.norm(_axis_raw)
+
+# Optimizer default position: SW (27.5, 12.6, 10.4) → URDF (10.4, 27.5, 12.6) mm
+NEW_CMC_POS = np.array([0.0104, 0.0275, 0.0126])
 
 # Get old CMC's rotation matrix from its static_T
 T_old_first = np.array(chains_json["Thumb"][0]["static_T"]).reshape(4, 4)
@@ -189,7 +190,14 @@ if s_ang > 1e-10:
     R_align = np.eye(3) + K * s_ang + (K @ K) * (1 - c_ang)
 else:
     R_align = np.eye(3) if c_ang > 0 else -np.eye(3)
-R_new = R_align @ R_old
+R_base = R_align @ R_old
+
+# Bake in optimizer default rotations: Rx=-21°, Ry=37°, Rz=27°
+_rx, _ry, _rz = np.radians(-21), np.radians(37), np.radians(27)
+_Rx = np.array([[1,0,0],[0,np.cos(_rx),-np.sin(_rx)],[0,np.sin(_rx),np.cos(_rx)]])
+_Ry = np.array([[np.cos(_ry),0,np.sin(_ry)],[0,1,0],[-np.sin(_ry),0,np.cos(_ry)]])
+_Rz = np.array([[np.cos(_rz),-np.sin(_rz),0],[np.sin(_rz),np.cos(_rz),0],[0,0,1]])
+R_new = R_base @ _Rx @ _Ry @ _Rz
 
 # New first-joint static transform
 T_new_first = np.eye(4)
@@ -387,7 +395,11 @@ html = f"""<!DOCTYPE html>
   .opt-row {{ display: flex; align-items: center; margin-bottom: 3px; gap: 4px; }}
   .opt-row label {{ width: 24px; font-size: 11px; font-weight: 700; color: #1abc9c; text-align: right; flex-shrink: 0; }}
   .opt-row input[type=range] {{ flex: 1; height: 5px; accent-color: #1abc9c; cursor: pointer; }}
-  .opt-row .val {{ width: 62px; font-size: 10px; color: #666; text-align: left; flex-shrink: 0; font-family: monospace; }}
+  .opt-row .val {{ width: 62px; font-size: 10px; color: #333; text-align: center; flex-shrink: 0; font-family: monospace;
+                   border: 1px solid #ccc; border-radius: 4px; padding: 2px 3px; background: #fff;
+                   -moz-appearance: textfield; }}
+  .opt-row .val::-webkit-outer-spin-button,
+  .opt-row .val::-webkit-inner-spin-button {{ -webkit-appearance: none; margin: 0; }}
   .coord-box {{ background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 8px; margin-top: 6px;
                 font-family: monospace; font-size: 10px; line-height: 1.6; color: #444; white-space: pre-wrap; word-break: break-all; }}
   .coord-box b {{ color: #1abc9c; }}
@@ -458,14 +470,14 @@ html = f"""<!DOCTYPE html>
     <div class="collapse-body hidden" id="optimizerBody">
       <div class="optimizer">
         <h3>Position (SolidWorks mm)</h3>
-        <div class="opt-row"><label>X</label><input type="range" id="cmcX" min="-10" max="40" value="{NEW_CMC_POS[1]*1000:.1f}" step="0.2"><span class="val" id="cmcXv">{NEW_CMC_POS[1]*1000:.1f}</span><span class="axis-hint">→ thumb</span></div>
-        <div class="opt-row"><label>Y</label><input type="range" id="cmcY" min="-10" max="50" value="{NEW_CMC_POS[2]*1000:.1f}" step="0.2"><span class="val" id="cmcYv">{NEW_CMC_POS[2]*1000:.1f}</span><span class="axis-hint">↑ fingers</span></div>
-        <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-30" max="30" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.2"><span class="val" id="cmcZv">{NEW_CMC_POS[0]*1000:.1f}</span><span class="axis-hint">↗ palmar</span></div>
+        <div class="opt-row"><label>X</label><input type="range" id="cmcX" min="-10" max="40" value="{NEW_CMC_POS[1]*1000:.1f}" step="0.2"><input type="number" class="val" id="cmcXv" value="{NEW_CMC_POS[1]*1000:.1f}" step="0.1"><span class="axis-hint">→ thumb</span></div>
+        <div class="opt-row"><label>Y</label><input type="range" id="cmcY" min="-10" max="50" value="{NEW_CMC_POS[2]*1000:.1f}" step="0.2"><input type="number" class="val" id="cmcYv" value="{NEW_CMC_POS[2]*1000:.1f}" step="0.1"><span class="axis-hint">↑ fingers</span></div>
+        <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-30" max="30" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.2"><input type="number" class="val" id="cmcZv" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.1"><span class="axis-hint">↗ palmar</span></div>
 
         <h3 style="margin-top:8px;">Frame Rotation (° around local axes)</h3>
-        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="0" step="1"><span class="val" id="cmcRxv">0°</span><span class="axis-hint" style="font-size:9px;">along finger</span></div>
-        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="0" step="1"><span class="val" id="cmcRyv">0°</span><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
-        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="0" step="1"><span class="val" id="cmcRzv">0°</span><span class="axis-hint" style="font-size:9px;">lateral</span></div>
+        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRxv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">along finger</span></div>
+        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRyv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
+        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRzv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">lateral</span></div>
 
         <h3 style="margin-top:8px;">Coordinates</h3>
         <div class="coord-box" id="coordReadout">Loading...</div>
@@ -631,17 +643,17 @@ function resetCMC() {{
   cmcState.y = INIT_CMC_POS[1];
   cmcState.z = INIT_CMC_POS[2];
   cmcState.rx = 0; cmcState.ry = 0; cmcState.rz = 0;
-  // Update position sliders (SW coords: X=URDF_Y, Y=URDF_Z, Z=URDF_X)
+  // Update position sliders + inputs (SW coords: X=URDF_Y, Y=URDF_Z, Z=URDF_X)
   document.getElementById('cmcX').value = cmcState.y.toFixed(1);
-  document.getElementById('cmcXv').textContent = cmcState.y.toFixed(1);
+  document.getElementById('cmcXv').value = cmcState.y.toFixed(1);
   document.getElementById('cmcY').value = cmcState.z.toFixed(1);
-  document.getElementById('cmcYv').textContent = cmcState.z.toFixed(1);
+  document.getElementById('cmcYv').value = cmcState.z.toFixed(1);
   document.getElementById('cmcZ').value = cmcState.x.toFixed(1);
-  document.getElementById('cmcZv').textContent = cmcState.x.toFixed(1);
-  // Update rotation sliders
+  document.getElementById('cmcZv').value = cmcState.x.toFixed(1);
+  // Update rotation sliders + inputs
   ['cmcRx','cmcRy','cmcRz'].forEach(id => {{
     document.getElementById(id).value = 0;
-    document.getElementById(id+'v').textContent = '0°';
+    document.getElementById(id+'v').value = '0';
   }});
   updateCMC();
 }}
@@ -1221,20 +1233,20 @@ function applySolidworks() {{
   cmcState.ry = ry_rad * RAD2DEG;
   cmcState.rz = rz_rad * RAD2DEG;
 
-  // Update position sliders (SW coords: cmcX=SW_X=URDF_Y, cmcY=SW_Y=URDF_Z, cmcZ=SW_Z=URDF_X)
+  // Update position sliders + inputs (SW coords: cmcX=SW_X=URDF_Y, cmcY=SW_Y=URDF_Z, cmcZ=SW_Z=URDF_X)
   document.getElementById('cmcX').value = urdfY.toFixed(1);
-  document.getElementById('cmcXv').textContent = urdfY.toFixed(1);
+  document.getElementById('cmcXv').value = urdfY.toFixed(1);
   document.getElementById('cmcY').value = urdfZ.toFixed(1);
-  document.getElementById('cmcYv').textContent = urdfZ.toFixed(1);
+  document.getElementById('cmcYv').value = urdfZ.toFixed(1);
   document.getElementById('cmcZ').value = urdfX.toFixed(1);
-  document.getElementById('cmcZv').textContent = urdfX.toFixed(1);
-  // Update rotation sliders
+  document.getElementById('cmcZv').value = urdfX.toFixed(1);
+  // Update rotation sliders + inputs
   document.getElementById('cmcRx').value = cmcState.rx.toFixed(0);
-  document.getElementById('cmcRxv').textContent = cmcState.rx.toFixed(0) + '°';
+  document.getElementById('cmcRxv').value = cmcState.rx.toFixed(0);
   document.getElementById('cmcRy').value = cmcState.ry.toFixed(0);
-  document.getElementById('cmcRyv').textContent = cmcState.ry.toFixed(0) + '°';
+  document.getElementById('cmcRyv').value = cmcState.ry.toFixed(0);
   document.getElementById('cmcRz').value = cmcState.rz.toFixed(0);
-  document.getElementById('cmcRzv').textContent = cmcState.rz.toFixed(0) + '°';
+  document.getElementById('cmcRzv').value = cmcState.rz.toFixed(0);
 
   // Clamp slider ranges if needed
   ['cmcX','cmcY','cmcZ'].forEach(id => {{
@@ -1329,21 +1341,34 @@ End Sub`;
   }}).catch(() => {{}});
 }}
 
-// ── CMC Optimizer slider listeners ───────────────────────
+// ── CMC Optimizer slider+input listeners ─────────────────
 // Position: cmcX=SW_X→URDF_Y, cmcY=SW_Y→URDF_Z, cmcZ=SW_Z→URDF_X
 // Rotation: cmcRx/Ry/Rz = local frame rotation offsets (degrees)
+function applyCmcValue(id, v) {{
+  if (id==='cmcX') cmcState.y=v;
+  else if (id==='cmcY') cmcState.z=v;
+  else if (id==='cmcZ') cmcState.x=v;
+  else if (id==='cmcRx') cmcState.rx=v;
+  else if (id==='cmcRy') cmcState.ry=v;
+  else if (id==='cmcRz') cmcState.rz=v;
+  updateCMC();
+}}
 ['cmcX','cmcY','cmcZ','cmcRx','cmcRy','cmcRz'].forEach(id => {{
-  const el = document.getElementById(id);
-  const valEl = document.getElementById(id + 'v');
-  el.addEventListener('input', () => {{
-    const v = parseFloat(el.value);
-    if (id==='cmcX') {{ cmcState.y=v; valEl.textContent=v.toFixed(1); }}
-    else if (id==='cmcY') {{ cmcState.z=v; valEl.textContent=v.toFixed(1); }}
-    else if (id==='cmcZ') {{ cmcState.x=v; valEl.textContent=v.toFixed(1); }}
-    else if (id==='cmcRx') {{ cmcState.rx=v; valEl.textContent=v.toFixed(0)+'°'; }}
-    else if (id==='cmcRy') {{ cmcState.ry=v; valEl.textContent=v.toFixed(0)+'°'; }}
-    else if (id==='cmcRz') {{ cmcState.rz=v; valEl.textContent=v.toFixed(0)+'°'; }}
-    updateCMC();
+  const slider = document.getElementById(id);
+  const numInput = document.getElementById(id + 'v');
+  const isRot = id.startsWith('cmcR');
+  // Slider → update number input + state
+  slider.addEventListener('input', () => {{
+    const v = parseFloat(slider.value);
+    numInput.value = isRot ? v.toFixed(0) : v.toFixed(1);
+    applyCmcValue(id, v);
+  }});
+  // Number input → update slider + state
+  numInput.addEventListener('input', () => {{
+    const v = parseFloat(numInput.value);
+    if (isNaN(v)) return;
+    slider.value = v;
+    applyCmcValue(id, v);
   }});
 }});
 
