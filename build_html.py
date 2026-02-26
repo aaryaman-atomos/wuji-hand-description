@@ -189,14 +189,9 @@ if s_ang > 1e-10:
 else:
     R_align = np.eye(3) if c_ang > 0 else -np.eye(3)
 R_base = R_align @ R_old
-
-# Bake in default rotation offsets: Rx=-21°, Ry=37°, Rz=26° (intrinsic)
-# R_new = R_base @ Rx @ Ry @ Rz
-_rx, _ry, _rz = np.radians(-21), np.radians(37), np.radians(26)
-_Rx = np.array([[1,0,0],[0,np.cos(_rx),-np.sin(_rx)],[0,np.sin(_rx),np.cos(_rx)]])
-_Ry = np.array([[np.cos(_ry),0,np.sin(_ry)],[0,1,0],[-np.sin(_ry),0,np.cos(_ry)]])
-_Rz = np.array([[np.cos(_rz),-np.sin(_rz),0],[np.sin(_rz),np.cos(_rz),0],[0,0,1]])
-R_new = R_base @ _Rx @ _Ry @ _Rz
+# R_base is the axis-aligned base frame; actual rotation offsets (Rx,Ry,Rz)
+# are applied in JavaScript via INIT_RX/RY/RZ defaults on the sliders.
+R_new = R_base
 
 # New first-joint static transform
 T_new_first = np.eye(4)
@@ -474,9 +469,9 @@ html = f"""<!DOCTYPE html>
         <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-30" max="30" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.2"><input type="number" class="val" id="cmcZv" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.1"><span class="axis-hint">↗ palmar</span></div>
 
         <h3 style="margin-top:8px;">Frame Rotation (° around local axes)</h3>
-        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRxv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">along finger</span></div>
-        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRyv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
-        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRzv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">lateral</span></div>
+        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="-21" step="1"><input type="number" class="val" id="cmcRxv" value="-21" step="1"><span class="axis-hint" style="font-size:9px;">along finger</span></div>
+        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="37" step="1"><input type="number" class="val" id="cmcRyv" value="37" step="1"><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
+        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="26" step="1"><input type="number" class="val" id="cmcRzv" value="26" step="1"><span class="axis-hint" style="font-size:9px;">lateral</span></div>
 
         <h3 style="margin-top:8px;">Coordinates</h3>
         <div class="coord-box" id="coordReadout">Loading...</div>
@@ -574,7 +569,7 @@ FINGER_ORDER.forEach(f => {{
 // Initial axis direction for Thumb 2
 const INIT_CMC_AXIS = {json.dumps(NEW_CMC_AXIS.tolist())};
 const INIT_CMC_POS  = {json.dumps((NEW_CMC_POS * 1000).tolist())};  // mm
-const INIT_RX = 0, INIT_RY = 0, INIT_RZ = 0;  // default rotation offsets (degrees)
+const INIT_RX = -21, INIT_RY = 37, INIT_RZ = 26;  // default rotation offsets (degrees)
 
 // Current CMC optimizer values
 const cmcState = {{
@@ -1387,8 +1382,9 @@ document.querySelectorAll('.collapsible').forEach(h => {{
   }});
 }});
 
-// Init coordinate readout on load
+// Init on load: apply default CMC rotation + update readout
 document.addEventListener('DOMContentLoaded', () => {{
+  updateCMC();       // apply default Rx/Ry/Rz to Thumb 2's static_T
   updateCoordReadout();
 }});
 
