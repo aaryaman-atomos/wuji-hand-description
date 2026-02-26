@@ -164,16 +164,15 @@ for fname, chain in chains.items():
 # ── Add Thumb 2 (relocated CMC joint) ───────────────────────
 print("Building Thumb 2 (relocated CMC) ...")
 
-# SolidWorks Input CMC origin: (29.65, 18.54, 5.54) mm → URDF (5.54, 29.65, 18.54) mm
-_sw_origin = np.array([0.00554, 0.02965, 0.01854])
-# SolidWorks Input point on axis: (11.49, -18.68, 18.21) mm → URDF (18.21, 11.49, -18.68) mm
-_sw_axis_pt = np.array([0.01821, 0.01149, -0.01868])
-# Axis direction in URDF
-_axis_raw = (_sw_axis_pt - _sw_origin) * 1000  # (12.67, -18.16, -37.22) mm
-NEW_CMC_AXIS = _axis_raw / np.linalg.norm(_axis_raw)
+# New CMC position in URDF coordinates (meters)
+# Sketch (27.46, 18.54, 5.54) mm → URDF (sketch_z, sketch_x, sketch_y)
+NEW_CMC_POS = np.array([0.00554, 0.02746, 0.01854])
 
-# Optimizer default position: SW (27.5, 12.6, 10.4) → URDF (10.4, 27.5, 12.6) mm
-NEW_CMC_POS = np.array([0.0104, 0.0275, 0.0126])
+# Axis direction: vector from new CMC to axis point, in URDF coords
+# Axis point sketch (22.55, 9.91, 32.25) → URDF (32.25, 22.55, 9.91) mm
+# Direction = axis_point - cmc = (26.71, -4.91, -8.63) mm
+_axis_raw = np.array([26.71, -4.91, -8.63])
+NEW_CMC_AXIS = _axis_raw / np.linalg.norm(_axis_raw)
 
 # Get old CMC's rotation matrix from its static_T
 T_old_first = np.array(chains_json["Thumb"][0]["static_T"]).reshape(4, 4)
@@ -191,13 +190,7 @@ if s_ang > 1e-10:
 else:
     R_align = np.eye(3) if c_ang > 0 else -np.eye(3)
 R_base = R_align @ R_old
-
-# Bake in optimizer default rotations: Rx=-21°, Ry=37°, Rz=27°
-_rx, _ry, _rz = np.radians(-21), np.radians(37), np.radians(27)
-_Rx = np.array([[1,0,0],[0,np.cos(_rx),-np.sin(_rx)],[0,np.sin(_rx),np.cos(_rx)]])
-_Ry = np.array([[np.cos(_ry),0,np.sin(_ry)],[0,1,0],[-np.sin(_ry),0,np.cos(_ry)]])
-_Rz = np.array([[np.cos(_rz),-np.sin(_rz),0],[np.sin(_rz),np.cos(_rz),0],[0,0,1]])
-R_new = R_base @ _Rx @ _Ry @ _Rz
+R_new = R_base
 
 # New first-joint static transform
 T_new_first = np.eye(4)
@@ -475,9 +468,9 @@ html = f"""<!DOCTYPE html>
         <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-30" max="30" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.2"><input type="number" class="val" id="cmcZv" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.1"><span class="axis-hint">↗ palmar</span></div>
 
         <h3 style="margin-top:8px;">Frame Rotation (° around local axes)</h3>
-        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="-21" step="1"><input type="number" class="val" id="cmcRxv" value="-21" step="1"><span class="axis-hint" style="font-size:9px;">along finger</span></div>
-        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="37" step="1"><input type="number" class="val" id="cmcRyv" value="37" step="1"><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
-        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="27" step="1"><input type="number" class="val" id="cmcRzv" value="27" step="1"><span class="axis-hint" style="font-size:9px;">lateral</span></div>
+        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRxv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">along finger</span></div>
+        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRyv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
+        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRzv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">lateral</span></div>
 
         <h3 style="margin-top:8px;">Coordinates</h3>
         <div class="coord-box" id="coordReadout">Loading...</div>
@@ -575,7 +568,7 @@ FINGER_ORDER.forEach(f => {{
 // Initial axis direction for Thumb 2
 const INIT_CMC_AXIS = {json.dumps(NEW_CMC_AXIS.tolist())};
 const INIT_CMC_POS  = {json.dumps((NEW_CMC_POS * 1000).tolist())};  // mm
-const INIT_RX = -21, INIT_RY = 37, INIT_RZ = 27;  // default rotation offsets (degrees)
+const INIT_RX = 0, INIT_RY = 0, INIT_RZ = 0;  // default rotation offsets (degrees)
 
 // Current CMC optimizer values
 const cmcState = {{
