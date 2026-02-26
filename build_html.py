@@ -475,9 +475,9 @@ html = f"""<!DOCTYPE html>
         <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-30" max="30" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.2"><input type="number" class="val" id="cmcZv" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.1"><span class="axis-hint">↗ palmar</span></div>
 
         <h3 style="margin-top:8px;">Frame Rotation (° around local axes)</h3>
-        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRxv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">along finger</span></div>
-        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRyv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
-        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRzv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">lateral</span></div>
+        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="-21" step="1"><input type="number" class="val" id="cmcRxv" value="-21" step="1"><span class="axis-hint" style="font-size:9px;">along finger</span></div>
+        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="37" step="1"><input type="number" class="val" id="cmcRyv" value="37" step="1"><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
+        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="27" step="1"><input type="number" class="val" id="cmcRzv" value="27" step="1"><span class="axis-hint" style="font-size:9px;">lateral</span></div>
 
         <h3 style="margin-top:8px;">Coordinates</h3>
         <div class="coord-box" id="coordReadout">Loading...</div>
@@ -575,15 +575,16 @@ FINGER_ORDER.forEach(f => {{
 // Initial axis direction for Thumb 2
 const INIT_CMC_AXIS = {json.dumps(NEW_CMC_AXIS.tolist())};
 const INIT_CMC_POS  = {json.dumps((NEW_CMC_POS * 1000).tolist())};  // mm
+const INIT_RX = -21, INIT_RY = 37, INIT_RZ = 27;  // default rotation offsets (degrees)
 
 // Current CMC optimizer values
 const cmcState = {{
   x: INIT_CMC_POS[0], y: INIT_CMC_POS[1], z: INIT_CMC_POS[2],  // mm (URDF)
-  rx: 0, ry: 0, rz: 0,  // degrees: rotation around local X, Y, Z of initial frame
+  rx: INIT_RX, ry: INIT_RY, rz: INIT_RZ,  // degrees: rotation around local X, Y, Z of initial frame
 }};
 
-// Initial rotation matrix for Thumb 2 (row-major 3×3) — the base frame we rotate from
-const INIT_R = {json.dumps(R_new.flatten().tolist())};
+// Base rotation matrix for Thumb 2 (row-major 3×3) — axis-aligned frame, WITHOUT baked rotations
+const INIT_R = {json.dumps(R_base.flatten().tolist())};
 
 // Elementary rotation matrices (row-major 3×3)
 function rotX3(a) {{
@@ -642,7 +643,7 @@ function resetCMC() {{
   cmcState.x = INIT_CMC_POS[0];
   cmcState.y = INIT_CMC_POS[1];
   cmcState.z = INIT_CMC_POS[2];
-  cmcState.rx = 0; cmcState.ry = 0; cmcState.rz = 0;
+  cmcState.rx = INIT_RX; cmcState.ry = INIT_RY; cmcState.rz = INIT_RZ;
   // Update position sliders + inputs (SW coords: X=URDF_Y, Y=URDF_Z, Z=URDF_X)
   document.getElementById('cmcX').value = cmcState.y.toFixed(1);
   document.getElementById('cmcXv').value = cmcState.y.toFixed(1);
@@ -651,9 +652,10 @@ function resetCMC() {{
   document.getElementById('cmcZ').value = cmcState.x.toFixed(1);
   document.getElementById('cmcZv').value = cmcState.x.toFixed(1);
   // Update rotation sliders + inputs
+  const initRots = {{cmcRx: INIT_RX, cmcRy: INIT_RY, cmcRz: INIT_RZ}};
   ['cmcRx','cmcRy','cmcRz'].forEach(id => {{
-    document.getElementById(id).value = 0;
-    document.getElementById(id+'v').value = '0';
+    document.getElementById(id).value = initRots[id];
+    document.getElementById(id+'v').value = initRots[id].toFixed(0);
   }});
   updateCMC();
 }}
