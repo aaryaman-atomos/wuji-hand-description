@@ -189,7 +189,14 @@ if s_ang > 1e-10:
 else:
     R_align = np.eye(3) if c_ang > 0 else -np.eye(3)
 R_base = R_align @ R_old
-R_new = R_base
+
+# Bake in default rotation offsets: Rx=-21°, Ry=37°, Rz=26° (intrinsic)
+# R_new = R_base @ Rx @ Ry @ Rz
+_rx, _ry, _rz = np.radians(-21), np.radians(37), np.radians(26)
+_Rx = np.array([[1,0,0],[0,np.cos(_rx),-np.sin(_rx)],[0,np.sin(_rx),np.cos(_rx)]])
+_Ry = np.array([[np.cos(_ry),0,np.sin(_ry)],[0,1,0],[-np.sin(_ry),0,np.cos(_ry)]])
+_Rz = np.array([[np.cos(_rz),-np.sin(_rz),0],[np.sin(_rz),np.cos(_rz),0],[0,0,1]])
+R_new = R_base @ _Rx @ _Ry @ _Rz
 
 # New first-joint static transform
 T_new_first = np.eye(4)
