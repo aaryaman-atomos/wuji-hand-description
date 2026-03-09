@@ -168,10 +168,10 @@ print("Building Thumb 2 (relocated CMC) ...")
 # Sketch (27.460, 12.600, 10.400) mm → URDF (sketch_z, sketch_x, sketch_y)
 NEW_CMC_POS = np.array([0.01040, 0.02746, 0.01260])
 
-# Axis direction in URDF coords
-# Sketch direction (-0.036760, -0.608509, 0.792695) → URDF (sketch_z, sketch_x, sketch_y)
-NEW_CMC_AXIS = np.array([0.792695, -0.036760, -0.608509])
-NEW_CMC_AXIS = NEW_CMC_AXIS / np.linalg.norm(NEW_CMC_AXIS)  # ensure unit
+# Axis direction: from origin (27.46, 12.60, 10.40) to point (26.72, 0.43, 26.25) in sketch
+# Sketch dir = (-0.74, -12.17, 15.85) → URDF (15.85, -0.74, -12.17)
+_axis_raw = np.array([15.85, -0.74, -12.17])
+NEW_CMC_AXIS = _axis_raw / np.linalg.norm(_axis_raw)  # normalize
 
 # Get old CMC's rotation matrix from its static_T
 T_old_first = np.array(chains_json["Thumb"][0]["static_T"]).reshape(4, 4)
