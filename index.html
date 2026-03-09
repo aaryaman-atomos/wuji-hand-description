@@ -221,18 +221,19 @@ FINGER_ORDER.forEach(f => {
 });
 
 // ── CMC Optimizer state ──────────────────────────────────
-// Initial axis direction for Thumb 2
-const INIT_CMC_AXIS = [0.7926198928263708, -0.03700559751996936, -0.6085920565108475];
+// Desired joint axis direction for Thumb 2 (URDF coords, unit vector) — LOCKED
+const DESIRED_CMC_AXIS = [0.7926198928263708, -0.03700559751996936, -0.6085920565108475];
+const INIT_CMC_AXIS = DESIRED_CMC_AXIS;  // alias for compat
 const INIT_CMC_POS  = [10.4, 27.459999999999997, 12.6];  // mm
 const INIT_RX = -21, INIT_RY = 37, INIT_RZ = 26;  // default rotation offsets (degrees)
 
 // Current CMC optimizer values
 const cmcState = {
   x: INIT_CMC_POS[0], y: INIT_CMC_POS[1], z: INIT_CMC_POS[2],  // mm (URDF)
-  rx: INIT_RX, ry: INIT_RY, rz: INIT_RZ,  // degrees: rotation around local X, Y, Z of initial frame
+  rx: INIT_RX, ry: INIT_RY, rz: INIT_RZ,  // degrees: frame rotation around local axes
 };
 
-// Base rotation matrix for Thumb 2 (row-major 3×3) — axis-aligned frame, WITHOUT baked rotations
+// Base rotation matrix for Thumb 2 (row-major 3×3) — Y-axis aligned to desired CMC axis
 const INIT_R = [0.46721319816881396, 0.7926198928263706, 0.39174677146440007, -0.6044592575414675, -0.03700559751996934, 0.7957760939640043, 0.6452447856660961, -0.6085920565108472, 0.46181692836297267];
 
 // Elementary rotation matrices (row-major 3×3)
@@ -257,16 +258,45 @@ function mul33(A, B) {
   return R;
 }
 
-// Build rotation = INIT_R × Rx(rx) × Ry(ry) × Rz(rz)
-// Rotations are intrinsic (applied in the local frame of INIT_R)
+// Build rotation = INIT_R × Rx(rx) × Ry(ry) × Rz(rz), then re-project
+// so Y-column always = DESIRED_CMC_AXIS (joint axis is locked).
+// Rx/Ry/Rz adjust the link orientation around the axis, not the axis itself.
 function buildCmcRotation() {
   const rx = cmcState.rx * DEG2RAD;
   const ry = cmcState.ry * DEG2RAD;
   const rz = cmcState.rz * DEG2RAD;
+
+  // Step 1: compute unconstrained rotation
   let R = mul33(rotY3(ry), rotZ3(rz));
   R = mul33(rotX3(rx), R);
-  R = mul33(INIT_R, R);  // apply local rotations in initial frame
-  return R;
+  R = mul33(INIT_R, R);
+
+  // Step 2: re-project so Y-column = desired axis direction
+  const Y = DESIRED_CMC_AXIS;  // [yx, yy, yz]
+
+  // Get current X-column, project out Y component, normalize
+  let Xx = R[0], Xy = R[3], Xz = R[6];
+  let dot = Xx*Y[0] + Xy*Y[1] + Xz*Y[2];
+  Xx -= dot*Y[0]; Xy -= dot*Y[1]; Xz -= dot*Y[2];
+  let len = Math.sqrt(Xx*Xx + Xy*Xy + Xz*Xz);
+  if (len < 1e-10) {
+    // X was parallel to Y — fall back to any perpendicular
+    Xx = R[2]; Xy = R[5]; Xz = R[8];
+    dot = Xx*Y[0] + Xy*Y[1] + Xz*Y[2];
+    Xx -= dot*Y[0]; Xy -= dot*Y[1]; Xz -= dot*Y[2];
+    len = Math.sqrt(Xx*Xx + Xy*Xy + Xz*Xz);
+  }
+  Xx /= len; Xy /= len; Xz /= len;
+
+  // Z = X × Y (right-handed frame)
+  const Zx = Xy*Y[2] - Xz*Y[1];
+  const Zy = Xz*Y[0] - Xx*Y[2];
+  const Zz = Xx*Y[1] - Xy*Y[0];
+
+  // Row-major: row 0 = [Xx, Yx, Zx], row 1 = [Xy, Yy, Zy], row 2 = [Xz, Yz, Zz]
+  return [Xx, Y[0], Zx,
+          Xy, Y[1], Zy,
+          Xz, Y[2], Zz];
 }
 
 // Build flat 16-element row-major 4×4 from rotation + position (mm → m)
@@ -281,10 +311,9 @@ function buildCmcStaticT() {
   ];
 }
 
-// Get current axis direction (column 1 of rotation matrix = local Y = joint rotation axis)
+// Get current axis direction — always the desired axis (locked)
 function getCmcAxis() {
-  const R = buildCmcRotation();
-  return [R[1], R[4], R[7]];  // column 1
+  return DESIRED_CMC_AXIS.slice();
 }
 
 // Reset CMC optimizer to initial values
