@@ -221,6 +221,27 @@ chains_json["Thumb 2"] = thumb2_json
 print(f"  CMC pos  (URDF): [{NEW_CMC_POS[0]*1000:.2f}, {NEW_CMC_POS[1]*1000:.2f}, {NEW_CMC_POS[2]*1000:.2f}] mm")
 print(f"  CMC axis (URDF): [{NEW_CMC_AXIS[0]:.4f}, {NEW_CMC_AXIS[1]:.4f}, {NEW_CMC_AXIS[2]:.4f}]")
 
+# Compute the full Thumb 2 default frame (R_base + Rx/Ry/Rz + Y-lock)
+# so AP1 Thumb can reuse the exact same orientation.
+INIT_RX, INIT_RY, INIT_RZ = -21, 37, 26  # degrees — must match JS defaults
+_rx, _ry, _rz = np.radians([INIT_RX, INIT_RY, INIT_RZ])
+_Rxm = np.array([[1,0,0],[0,np.cos(_rx),-np.sin(_rx)],[0,np.sin(_rx),np.cos(_rx)]])
+_Rym = np.array([[np.cos(_ry),0,np.sin(_ry)],[0,1,0],[-np.sin(_ry),0,np.cos(_ry)]])
+_Rzm = np.array([[np.cos(_rz),-np.sin(_rz),0],[np.sin(_rz),np.cos(_rz),0],[0,0,1]])
+_R_custom = _Rzm @ _Rym @ _Rxm
+_R_full = R_new @ _R_custom  # R_new = R_base from Thumb 2 section
+# Re-project Y-axis to DESIRED_CMC_AXIS (locks the joint axis direction)
+_y_locked = NEW_CMC_AXIS
+_x_raw = _R_full[:, 0]
+_z_new = np.cross(_x_raw, _y_locked); _z_new /= np.linalg.norm(_z_new)
+_x_new = np.cross(_y_locked, _z_new); _x_new /= np.linalg.norm(_x_new)
+THUMB2_DEFAULT_R = np.column_stack([_x_new, _y_locked, _z_new])
+THUMB2_DEFAULT_T = np.eye(4)
+THUMB2_DEFAULT_T[:3, :3] = THUMB2_DEFAULT_R
+THUMB2_DEFAULT_T[:3, 3] = NEW_CMC_POS
+print(f"  Thumb 2 default frame X: [{THUMB2_DEFAULT_R[0,0]:.6f}, {THUMB2_DEFAULT_R[1,0]:.6f}, {THUMB2_DEFAULT_R[2,0]:.6f}]")
+print(f"  Thumb 2 default frame Z: [{THUMB2_DEFAULT_R[0,2]:.6f}, {THUMB2_DEFAULT_R[1,2]:.6f}, {THUMB2_DEFAULT_R[2,2]:.6f}]")
+
 
 # ── Build AP1 hand by cloning Wuji chains with new MCP positions ─────
 # The AP1 hand reuses the same finger kinematics (link lengths, joint axes,
@@ -274,15 +295,21 @@ ap1_chains_json = {}
 ap1_mesh_map = {}  # AP1 link name → Wuji link name (for mesh reuse)
 
 for fname in AP1_FINGER_ORDER:
-    j = AP1_FIRST_JOINTS[fname]
-    pos_urdf = sw_to_urdf_pos(*j["pos"])
-    x_urdf = sw_to_urdf_vec(*j["X"])
-    y_urdf = sw_to_urdf_vec(*j["Y"])
-    z_urdf = sw_to_urdf_vec(*j["Z"])
-    R_ap1 = np.column_stack([x_urdf, y_urdf, z_urdf])
-    T_ap1_first = np.eye(4)
-    T_ap1_first[:3, :3] = R_ap1
-    T_ap1_first[:3, 3] = pos_urdf
+    if fname == "Thumb":
+        # Use the exact Wuji Thumb 2 default frame (incl. Rx/Ry/Rz rotations)
+        # so both thumbs match perfectly in position AND orientation
+        T_ap1_first = THUMB2_DEFAULT_T.copy()
+        pos_urdf = T_ap1_first[:3, 3]
+    else:
+        j = AP1_FIRST_JOINTS[fname]
+        pos_urdf = sw_to_urdf_pos(*j["pos"])
+        x_urdf = sw_to_urdf_vec(*j["X"])
+        y_urdf = sw_to_urdf_vec(*j["Y"])
+        z_urdf = sw_to_urdf_vec(*j["Z"])
+        R_ap1 = np.column_stack([x_urdf, y_urdf, z_urdf])
+        T_ap1_first = np.eye(4)
+        T_ap1_first[:3, :3] = R_ap1
+        T_ap1_first[:3, 3] = pos_urdf
 
     # Clone the corresponding Wuji chain
     wuji_chain = chains_json[fname]
