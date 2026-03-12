@@ -222,7 +222,11 @@ print(f"  CMC pos  (URDF): [{NEW_CMC_POS[0]*1000:.2f}, {NEW_CMC_POS[1]*1000:.2f}
 print(f"  CMC axis (URDF): [{NEW_CMC_AXIS[0]:.4f}, {NEW_CMC_AXIS[1]:.4f}, {NEW_CMC_AXIS[2]:.4f}]")
 
 
-# ── Build AP1 hand from SolidWorks coordinate systems ─────
+# ── Build AP1 hand by cloning Wuji chains with new MCP positions ─────
+# The AP1 hand reuses the same finger kinematics (link lengths, joint axes,
+# joint limits, meshes) as Wuji. Only the first-joint positions/orientations
+# differ — the MCP origin points have been translated and the fingers sit
+# at different angles relative to each other.
 print("Building AP1 hand ...")
 
 def sw_to_urdf_pos(sx, sy, sz):
@@ -233,180 +237,76 @@ def sw_to_urdf_vec(vx, vy, vz):
     """Convert SolidWorks sketch vector to URDF vector (no scaling)."""
     return np.array([vz, vx, vy])
 
-# AP1 joint coordinate systems (from Coord_Systems.txt)
-# Each entry: (name, origin_sketch_mm, X_vec, Y_vec, Z_vec)
-AP1_JOINTS = {
-    "T-CMC":  {"pos": (27.46, 12.6, 10.4),
-               "X": (-0.998132, 0.061087, 0.000556),
-               "Y": (-0.0368, -0.6085, 0.7927),
-               "Z": (0.048762, 0.791199, 0.609612)},
-    "T-Adab": {"pos": (33.1166, 27.1534, 14.241),
-               "X": (-0.821574, 0.427196, 0.377518),
-               "Y": (0.20029, -0.403695, 0.892701),
-               "Z": (0.53376, 0.809033, 0.246102)},
-    "T-MCP":  {"pos": (50.842, 55.5451, 23.3148),
-               "X": (-0.850644, 0.522735, 0.056155),
-               "Y": (-0.057676, -0.19895, 0.978311),
-               "Z": (0.522569, 0.828955, 0.199385)},
-    "T-IP":   {"pos": (66.2722, 80.049, 28.952),
-               "X": (-0.850644, 0.522735, 0.056155),
-               "Y": (-0.057676, -0.19895, 0.978311),
-               "Z": (0.522569, 0.828955, 0.199385)},
-    "I-MCP":  {"pos": (30.4925, 76.7159, -4.5259),
-               "X": (-0.215945, 0.071079, 0.973815),
-               "Y": (0.957657, -0.17909, 0.225433),
-               "Z": (0.190424, 0.981262, -0.029396)},
-    "I-Adab": {"pos": (30.7791, 80.7973, -2.501),
-               "X": (-0.215945, 0.071079, 0.973815),
-               "Y": (0.957657, -0.17909, 0.225433),
-               "Z": (0.190424, 0.981262, -0.029396)},
-    "I-PIP":  {"pos": (40.1107, 123.2604, -8.4089),
-               "X": (-0.216202, 0.071127, 0.973754),
-               "Y": (0.957599, -0.179071, 0.225695),
-               "Z": (0.190424, 0.981262, -0.029396)},
-    "I-DIP":  {"pos": (45.7283, 152.2076, -9.276),
-               "X": (-0.216202, 0.071127, 0.973754),
-               "Y": (0.957599, -0.179071, 0.225695),
-               "Z": (0.190424, 0.981262, -0.029396)},
-    "M-MCP":  {"pos": (7.4615, 89.544, -10.46),
+# AP1 first-joint coordinate systems from Coord_Systems.txt
+# We only need the first joint of each finger (MCP for non-thumb, CMC for thumb)
+# to reposition/reorient the finger. All subsequent joints reuse Wuji's chain.
+AP1_FIRST_JOINTS = {
+    "Thumb": {"pos": (27.46, 12.6, 10.4),
+              "X": (-0.998132, 0.061087, 0.000556),
+              "Y": (-0.0368, -0.6085, 0.7927),
+              "Z": (0.048762, 0.791199, 0.609612)},
+    "Index": {"pos": (30.4925, 76.7159, -4.5259),
+              "X": (-0.215945, 0.071079, 0.973815),
+              "Y": (0.957657, -0.17909, 0.225433),
+              "Z": (0.190424, 0.981262, -0.029396)},
+    "Middle": {"pos": (7.4615, 89.544, -10.46),
                "X": (0.000582, 0.087155, 0.996195),
                "Y": (1.0, -0.000051, -0.000579),
                "Z": (0.0, 0.996195, -0.087155)},
-    "M-Adab": {"pos": (7.4628, 93.7205, -8.617),
-               "X": (0.000582, 0.087155, 0.996195),
-               "Y": (1.0, -0.000051, -0.000579),
-               "Z": (0.0, 0.996195, -0.087155)},
-    "M-PIP":  {"pos": (7.46, 136.7586, -17.1505),
-               "X": (0.000313, 0.087155, 0.996195),
-               "Y": (1.0, -0.000027, -0.000312),
-               "Z": (0.0, 0.996195, -0.087155)},
-    "M-DIP":  {"pos": (7.46, 166.1463, -19.7215),
-               "X": (0.000313, 0.087155, 0.996195),
-               "Y": (1.0, -0.000027, -0.000312),
-               "Z": (0.0, 0.996195, -0.087155)},
-    "R-MCP":  {"pos": (-13.3358, 80.4592, -7.3503),
-               "X": (0.046946, 0.083339, 0.995415),
-               "Y": (0.994459, 0.089938, -0.05443),
-               "Z": (-0.094062, 0.992454, -0.078655)},
-    "R-Adab": {"pos": (-13.6087, 84.6123, -5.475),
-               "X": (0.046946, 0.083339, 0.995415),
-               "Y": (0.994459, 0.089938, -0.05443),
-               "Z": (-0.094062, 0.992454, -0.078655)},
-    "R-PIP":  {"pos": (-17.9345, 127.5054, -13.634),
-               "X": (0.046679, 0.083315, 0.995429),
-               "Y": (0.994471, 0.08996, -0.054163),
-               "Z": (-0.094062, 0.992454, -0.078655)},
-    "R-DIP":  {"pos": (-20.7093, 156.7828, -15.9543),
-               "X": (0.046679, 0.083315, 0.995429),
-               "Y": (0.994471, 0.08996, -0.054163),
-               "Z": (-0.094062, 0.992454, -0.078655)},
-    "P-MCP":  {"pos": (-31.3599, 61.5756, -1.495),
-               "X": (0.156346, 0.092385, 0.983372),
-               "Y": (0.966583, 0.190476, -0.171571),
-               "Z": (-0.203159, 0.977335, -0.059518)},
-    "P-Adab": {"pos": (-31.8286, 65.6882, 0.4304),
-               "X": (0.156346, 0.092385, 0.983372),
-               "Y": (0.966583, 0.190476, -0.171571),
-               "Z": (-0.203159, 0.977335, -0.059518)},
-    "P-PIP":  {"pos": (-41.4326, 107.8788, -6.8367),
-               "X": (0.156086, 0.092334, 0.983418),
-               "Y": (0.966625, 0.1905, -0.171307),
-               "Z": (-0.203159, 0.977335, -0.059518)},
-    "P-DIP":  {"pos": (-47.4258, 136.7102, -8.5925),
-               "X": (0.156086, 0.092334, 0.983418),
-               "Y": (0.966625, 0.1905, -0.171307),
-               "Z": (-0.203159, 0.977335, -0.059518)},
+    "Ring": {"pos": (-13.3358, 80.4592, -7.3503),
+             "X": (0.046946, 0.083339, 0.995415),
+             "Y": (0.994459, 0.089938, -0.05443),
+             "Z": (-0.094062, 0.992454, -0.078655)},
+    "Pinky": {"pos": (-31.3599, 61.5756, -1.495),
+              "X": (0.156346, 0.092385, 0.983372),
+              "Y": (0.966583, 0.190476, -0.171571),
+              "Z": (-0.203159, 0.977335, -0.059518)},
 }
 
-# Tip positions in SolidWorks sketch coords (mm)
-AP1_TIPS = {
-    "Thumb":  (81.9874, 102.8847, 34.7597),
-    "Index":  (51.0394, 178.3327, -11.0825),
-    "Middle": (7.4597, 192.6533, -23.0937),
-    "Ring":   (-23.2698, 183.1939, -19.0987),
-    "Pinky":  (-53.0139, 162.7082, -11.2133),
-}
+AP1_FINGER_ORDER = ["Thumb", "Index", "Middle", "Ring", "Pinky"]
 
-# AP1 finger chains: joint names in order from palm to tip
-AP1_FINGER_CHAINS = {
-    "Thumb":  ["T-CMC", "T-Adab", "T-MCP", "T-IP"],
-    "Index":  ["I-MCP", "I-Adab", "I-PIP", "I-DIP"],
-    "Middle": ["M-MCP", "M-Adab", "M-PIP", "M-DIP"],
-    "Ring":   ["R-MCP", "R-Adab", "R-PIP", "R-DIP"],
-    "Pinky":  ["P-MCP", "P-Adab", "P-PIP", "P-DIP"],
-}
+# Build AP1 chains: clone each Wuji finger chain, replacing only the first
+# joint's static_T with the AP1 global frame. This preserves:
+# - Correct joint axes (incl. [-1,0,0] for adduction/abduction)
+# - Correct link lengths
+# - Mesh compatibility (same local frames)
+ap1_chains_json = {}
+ap1_mesh_map = {}  # AP1 link name → Wuji link name (for mesh reuse)
 
-# Reuse Wuji joint limits: map (finger, role_index) → (lower, upper)
-# role_index: 0=MCP/CMC, 1=Abd, 2=PIP/MCP, 3=DIP/IP
-wuji_limits = {}
-for fname, chain in chains_json.items():
-    if fname == "Thumb 2":
-        continue
-    ri = 0
-    for entry in chain:
-        if entry["type"] == "revolute":
-            wuji_limits[(fname, ri)] = (entry["lower"], entry["upper"])
-            ri += 1
-
-def build_ap1_global_T(jname):
-    """Build 4x4 global transform for an AP1 joint in URDF coords."""
-    j = AP1_JOINTS[jname]
+for fname in AP1_FINGER_ORDER:
+    j = AP1_FIRST_JOINTS[fname]
     pos_urdf = sw_to_urdf_pos(*j["pos"])
     x_urdf = sw_to_urdf_vec(*j["X"])
     y_urdf = sw_to_urdf_vec(*j["Y"])
     z_urdf = sw_to_urdf_vec(*j["Z"])
-    R = np.column_stack([x_urdf, y_urdf, z_urdf])
-    T = np.eye(4)
-    T[:3, :3] = R
-    T[:3, 3] = pos_urdf
-    return T
+    R_ap1 = np.column_stack([x_urdf, y_urdf, z_urdf])
+    T_ap1_first = np.eye(4)
+    T_ap1_first[:3, :3] = R_ap1
+    T_ap1_first[:3, 3] = pos_urdf
 
-# Build AP1 chains
-ap1_chains_json = {}
-AP1_FINGER_ORDER = ["Thumb", "Index", "Middle", "Ring", "Pinky"]
-
-for fname, joint_names in AP1_FINGER_CHAINS.items():
-    labels = JOINT_ROLE_LABELS.get(fname, JOINT_ROLE_LABELS["default"])
-    jlist = []
-    prev_T_global = np.eye(4)  # palm is at origin
-
-    for i, jname in enumerate(joint_names):
-        T_global = build_ap1_global_T(jname)
-        # static_T = inv(prev_T_global) × T_global
-        static_T = np.linalg.inv(prev_T_global) @ T_global
-        # Joint limits from Wuji hand (same finger, same role index)
-        limits = wuji_limits.get((fname, i), (0.0, 0.0))
-        entry = {
-            "name": f"ap1_{jname.lower().replace('-','_')}",
-            "type": "revolute",
-            "child": f"ap1_{jname.lower().replace('-','_')}_link",
-            "static_T": static_T.flatten().tolist(),
-            "axis": [0, 1, 0],  # all joints rotate around local Y
-            "lower": limits[0],
-            "upper": limits[1],
-            "role": labels[i] if i < len(labels) else f"J{i+1}",
+    # Clone the corresponding Wuji chain
+    wuji_chain = chains_json[fname]
+    ap1_chain = []
+    for i, entry in enumerate(wuji_chain):
+        ne = {
+            "name": f"ap1_{entry['name']}",
+            "type": entry["type"],
+            "child": f"ap1_{entry['child']}",
+            # First joint: use AP1 position & orientation; rest: reuse Wuji
+            "static_T": T_ap1_first.flatten().tolist() if i == 0 else list(entry["static_T"]),
+            "axis": list(entry["axis"]),
+            "lower": entry["lower"],
+            "upper": entry["upper"],
         }
-        jlist.append(entry)
-        prev_T_global = T_global
+        if "role" in entry:
+            ne["role"] = entry["role"]
+        ap1_chain.append(ne)
+        # Map AP1 link name → Wuji link name for mesh reuse
+        ap1_mesh_map[ne["child"]] = entry["child"]
 
-    # Add fixed tip joint
-    tip_pos_urdf = sw_to_urdf_pos(*AP1_TIPS[fname])
-    T_tip_global = np.eye(4)
-    T_tip_global[:3, :3] = prev_T_global[:3, :3]  # same orientation as last joint
-    T_tip_global[:3, 3] = tip_pos_urdf
-    tip_static_T = np.linalg.inv(prev_T_global) @ T_tip_global
-    tip_entry = {
-        "name": f"ap1_{fname.lower()}_tip_fixed",
-        "type": "fixed",
-        "child": f"ap1_{fname.lower()}_tip_link",
-        "static_T": tip_static_T.flatten().tolist(),
-        "axis": [0, 0, 0],
-        "lower": 0.0,
-        "upper": 0.0,
-    }
-    jlist.append(tip_entry)
-    ap1_chains_json[fname] = jlist
-    print(f"  AP1 {fname}: {len(joint_names)} revolute + 1 fixed = {len(jlist)} entries")
+    ap1_chains_json[fname] = ap1_chain
+    print(f"  AP1 {fname}: cloned from Wuji ({len(ap1_chain)} entries)")
+    print(f"    MCP pos (URDF mm): [{pos_urdf[0]*1000:.2f}, {pos_urdf[1]*1000:.2f}, {pos_urdf[2]*1000:.2f}]")
 
 # Compute AP1 workspace hulls
 print("Computing AP1 workspace hulls ...")
@@ -739,14 +639,16 @@ const HANDS = {{
     fingerOrder: {json.dumps(FINGER_ORDER)},
     hasMeshes: true,
     hasThumb2: true,
+    meshMap: {{}},
     label: 'Wuji Hand',
   }},
   ap1: {{
     chains: {json.dumps(ap1_chains_json)},
     hulls: {json.dumps(ap1_hulls_json)},
     fingerOrder: ["Thumb", "Index", "Middle", "Ring", "Pinky"],
-    hasMeshes: false,
+    hasMeshes: true,
     hasThumb2: false,
+    meshMap: {json.dumps(ap1_mesh_map)},
     label: 'AP1',
   }}
 }};
@@ -1065,10 +967,13 @@ function fkLinkTransforms(chain) {{
   return transforms;
 }}
 
-// Mesh lookup: Thumb 2 links reuse original Thumb meshes (strip _t2 suffix)
+// Mesh lookup: Thumb 2 links reuse Thumb meshes; AP1 links reuse Wuji meshes
 function meshLookup(linkName) {{
   if (MESHES[linkName]) return MESHES[linkName];
   if (linkName.endsWith('_t2')) return MESHES[linkName.slice(0, -3)] || null;
+  // AP1 mesh mapping: ap1_<wuji_link> → wuji_link
+  const mapped = HANDS[activeHandId].meshMap && HANDS[activeHandId].meshMap[linkName];
+  if (mapped && MESHES[mapped]) return MESHES[mapped];
   return null;
 }}
 
@@ -1227,9 +1132,7 @@ function switchHand(handId) {{
     const body = document.getElementById(el.dataset.target);
     if (body) body.style.display = wujiOnly ? '' : 'none';
   }});
-  const meshSec = document.querySelector('h2:has(+.toggle-section #meshToggle)');
-  // Hide mesh toggle section for AP1
-  document.getElementById('meshToggle').parentElement.style.display = wujiOnly ? '' : 'none';
+  // Mesh toggle visible for all hands (AP1 also has meshes now)
 
   // Update CMC for Wuji
   if (wujiOnly) updateCMC();
