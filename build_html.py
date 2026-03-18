@@ -627,9 +627,9 @@ html = f"""<!DOCTYPE html>
         <div class="opt-row"><label>Z</label><input type="range" id="cmcZ" min="-30" max="30" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.2"><input type="number" class="val" id="cmcZv" value="{NEW_CMC_POS[0]*1000:.1f}" step="0.1"><span class="axis-hint">↗ palmar</span></div>
 
         <h3 style="margin-top:8px;">Frame Rotation (° around local axes)</h3>
-        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="-21" step="1"><input type="number" class="val" id="cmcRxv" value="-21" step="1"><span class="axis-hint" style="font-size:9px;">along finger</span></div>
-        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="37" step="1"><input type="number" class="val" id="cmcRyv" value="37" step="1"><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
-        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="26" step="1"><input type="number" class="val" id="cmcRzv" value="26" step="1"><span class="axis-hint" style="font-size:9px;">lateral</span></div>
+        <div class="opt-row"><label>Rx</label><input type="range" id="cmcRx" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRxv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">along finger</span></div>
+        <div class="opt-row"><label>Ry</label><input type="range" id="cmcRy" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRyv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">joint axis</span></div>
+        <div class="opt-row"><label>Rz</label><input type="range" id="cmcRz" min="-180" max="180" value="0" step="1"><input type="number" class="val" id="cmcRzv" value="0" step="1"><span class="axis-hint" style="font-size:9px;">lateral</span></div>
 
         <h3 style="margin-top:8px;">Coordinates</h3>
         <div class="coord-box" id="coordReadout">Loading...</div>
@@ -749,7 +749,7 @@ FINGER_ORDER.forEach(f => {{
 const DESIRED_CMC_AXIS = {json.dumps(NEW_CMC_AXIS.tolist())};
 const INIT_CMC_AXIS = DESIRED_CMC_AXIS;  // alias for compat
 const INIT_CMC_POS  = {json.dumps((NEW_CMC_POS * 1000).tolist())};  // mm
-const INIT_RX = -21, INIT_RY = 37, INIT_RZ = 26;  // default rotation offsets (degrees)
+const INIT_RX = 0, INIT_RY = 0, INIT_RZ = 0;  // rotations already baked into INIT_R
 
 // Current CMC optimizer values
 const cmcState = {{
@@ -757,8 +757,10 @@ const cmcState = {{
   rx: INIT_RX, ry: INIT_RY, rz: INIT_RZ,  // degrees: frame rotation around local axes
 }};
 
-// Base rotation matrix for Thumb 2 (row-major 3×3) — Y-axis aligned to desired CMC axis
-const INIT_R = {json.dumps(R_base.flatten().tolist())};
+// Base rotation matrix for Thumb 2 (row-major 3×3)
+// This is the full default frame with Rx/Ry/Rz already baked in, so
+// the sliders start at 0 and provide true independent 3-axis rotation.
+const INIT_R = {json.dumps(THUMB2_DEFAULT_R.flatten().tolist())};
 
 // Elementary rotation matrices (row-major 3×3)
 function rotX3(a) {{
@@ -782,45 +784,20 @@ function mul33(A, B) {{
   return R;
 }}
 
-// Build rotation = INIT_R × Rx(rx) × Ry(ry) × Rz(rz), then re-project
-// so Y-column always = DESIRED_CMC_AXIS (joint axis is locked).
-// Rx/Ry/Rz adjust the link orientation around the axis, not the axis itself.
+// Build rotation = INIT_R × Rz(rz) × Ry(ry) × Rx(rx)
+// True intrinsic rotations around the local axes of the base frame:
+//   Rx = rotation around local X ("along finger")
+//   Ry = rotation around local Y ("joint axis")
+//   Rz = rotation around local Z ("lateral")
+// No re-projection — all three are fully independent.
 function buildCmcRotation() {{
   const rx = cmcState.rx * DEG2RAD;
   const ry = cmcState.ry * DEG2RAD;
   const rz = cmcState.rz * DEG2RAD;
 
-  // Step 1: compute unconstrained rotation
-  let R = mul33(rotY3(ry), rotZ3(rz));
-  R = mul33(rotX3(rx), R);
-  R = mul33(INIT_R, R);
-
-  // Step 2: re-project so Y-column = desired axis direction
-  const Y = DESIRED_CMC_AXIS;  // [yx, yy, yz]
-
-  // Get current X-column, project out Y component, normalize
-  let Xx = R[0], Xy = R[3], Xz = R[6];
-  let dot = Xx*Y[0] + Xy*Y[1] + Xz*Y[2];
-  Xx -= dot*Y[0]; Xy -= dot*Y[1]; Xz -= dot*Y[2];
-  let len = Math.sqrt(Xx*Xx + Xy*Xy + Xz*Xz);
-  if (len < 1e-10) {{
-    // X was parallel to Y — fall back to any perpendicular
-    Xx = R[2]; Xy = R[5]; Xz = R[8];
-    dot = Xx*Y[0] + Xy*Y[1] + Xz*Y[2];
-    Xx -= dot*Y[0]; Xy -= dot*Y[1]; Xz -= dot*Y[2];
-    len = Math.sqrt(Xx*Xx + Xy*Xy + Xz*Xz);
-  }}
-  Xx /= len; Xy /= len; Xz /= len;
-
-  // Z = X × Y (right-handed frame)
-  const Zx = Xy*Y[2] - Xz*Y[1];
-  const Zy = Xz*Y[0] - Xx*Y[2];
-  const Zz = Xx*Y[1] - Xy*Y[0];
-
-  // Row-major: row 0 = [Xx, Yx, Zx], row 1 = [Xy, Yy, Zy], row 2 = [Xz, Yz, Zz]
-  return [Xx, Y[0], Zx,
-          Xy, Y[1], Zy,
-          Xz, Y[2], Zz];
+  // Intrinsic Z-Y-X rotation order (applied right-to-left)
+  let R_custom = mul33(rotZ3(rz), mul33(rotY3(ry), rotX3(rx)));
+  return mul33(INIT_R, R_custom);
 }}
 
 // Build flat 16-element row-major 4×4 from rotation + position (mm → m)
@@ -835,9 +812,10 @@ function buildCmcStaticT() {{
   ];
 }}
 
-// Get current axis direction — always the desired axis (locked)
+// Get current axis direction — Y-column of the current rotation matrix
 function getCmcAxis() {{
-  return DESIRED_CMC_AXIS.slice();
+  const R = buildCmcRotation();
+  return [R[1], R[4], R[7]];
 }}
 
 // Reset CMC optimizer to initial values
